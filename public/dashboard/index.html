@@ -188,8 +188,8 @@
     <div class="sidebar-year-badge" id="ytd-label-top">Jan-Jun 25 vs Jan-Jul 26</div>
     <ul class="nav-menu">
       <li><a href="#" class="nav-item active" data-page="home"><span class="nav-icon">🏠</span><span class="nav-label">Executive Dashboard</span></a></li>
-      <li><a href="#" class="nav-item" data-page="ytd"><span class="nav-icon">📊</span><span class="nav-label">YTD Performance</span></a></li>
-      <li><a href="#" class="nav-item" data-page="products"><span class="nav-icon">🧀</span><span class="nav-label">Product Analysis</span></a></li>
+      <li><a href="#" class="nav-item" data-page="ytd"><span class="nav-icon">📊</span><span class="nav-label">SKU YTD Performance</span></a></li>
+      <li><a href="#" class="nav-item" data-page="channel"><span class="nav-icon">🛒</span><span class="nav-label">Channel Performance</span></a></li>
       <li><a href="#" class="nav-item" data-page="customers"><span class="nav-icon">👥</span><span class="nav-label">Customer Analysis</span></a></li>
       <li><a href="#" class="nav-item" data-page="returns"><span class="nav-icon">↩️</span><span class="nav-label">Returns Analysis</span></a></li>
       <li><a href="#" class="nav-item" data-page="growth"><span class="nav-icon">📈</span><span class="nav-label">Growth Analysis</span></a></li>
@@ -207,19 +207,22 @@
     <div class="topbar">
       <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰</button>
       <div class="topbar-title" id="page-title">Executive Dashboard</div>
-      <div class="topbar-actions">
-        <!-- Global Slicer -->
+      <div class="topbar-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select id="month-filter" class="month-filter" title="Filter by month">
+          <option value="ytd">YTD (All Months)</option>
+        </select>
         <div class="measure-toggle">
           <button class="measure-btn active" data-measure="ton">Ton</button>
           <button class="measure-btn" data-measure="carton">Carton</button>
         </div>
+        <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">🌙</button>
       </div>
     </div>
 
     <!-- Pages -->
     <div class="page active" id="page-home"></div>
     <div class="page" id="page-ytd"></div>
-    <div class="page" id="page-products"></div>
+    <div class="page" id="page-channel"></div>
     <div class="page" id="page-customers"></div>
     <div class="page" id="page-returns"></div>
     <div class="page" id="page-growth"></div>
