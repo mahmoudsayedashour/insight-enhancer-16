@@ -1,24 +1,27 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "Greko Egypt – YTD Sales Dashboard" },
+      { name: "description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
+      { property: "og:title", content: "Greko Egypt – YTD Sales Dashboard" },
+      { property: "og:description", content: "Executive sales analytics for Greko Egypt." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: DashboardRedirect,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function DashboardRedirect() {
+  useEffect(() => {
+    window.location.replace("/dashboard/index.html");
+  }, []);
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#060e24", color: "#f0f4ff", fontFamily: "Inter, sans-serif" }}>
+      Loading dashboard…
     </div>
   );
 }
