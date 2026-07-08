@@ -83,9 +83,95 @@
     }
     
     /* Tables */
-    .data-table th { cursor: pointer; user-select: none; }
+    .data-table th { cursor: pointer; user-select: none; text-align: left; }
+    .data-table th.num { text-align: right; }
     .data-table th:hover { background: rgba(255,255,255,0.05); }
-    .data-table th::after { content: ' \2195'; opacity: 0.3; font-size: 10px; margin-left: 4px;}
+    .data-table th[data-sort]::after { content: ' \2195'; opacity: 0.3; font-size: 10px; margin-left: 4px;}
+
+    /* Month filter + theme toggle */
+    .month-filter {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .theme-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .theme-toggle:hover { background: var(--bg-card-hover); }
+
+    /* Tabs (Channel Performance) */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08)); }
+    .tab-btn {
+      background: transparent; border: none; color: var(--text-secondary);
+      padding: 10px 20px; cursor: pointer; font-weight: 600; font-size: 13px;
+      border-bottom: 2px solid transparent; transition: all .2s;
+    }
+    .tab-btn:hover { color: var(--text-primary); }
+    .tab-btn.active { color: var(--accent-cyan); border-bottom-color: var(--accent-cyan); }
+
+    /* KPI clickable state */
+    .kpi-card.clickable { cursor: pointer; transition: transform .15s, box-shadow .15s; }
+    .kpi-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,180,216,0.15); }
+    .kpi-card.selected { outline: 2px solid var(--accent-cyan); }
+
+    /* Search input */
+    .search-input {
+      background: var(--bg-card); border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+      color: var(--text-primary); padding: 8px 12px; border-radius: 8px; font-size: 13px;
+      width: 260px; margin-bottom: 12px;
+    }
+    .filter-note {
+      font-size: 12px; color: var(--text-muted); margin: -8px 0 12px;
+      padding: 8px 12px; background: rgba(0,180,216,0.06); border-left: 3px solid var(--accent-cyan);
+      border-radius: 4px;
+    }
+
+    /* ============= LIGHT THEME ============= */
+    html[data-theme="light"] {
+      --bg-primary: #f4f6fb;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f0f4fb;
+      --bg-glass: rgba(255,255,255,0.85);
+      --bg-glass-light: rgba(0,0,0,0.03);
+      --bg-sidebar: #ffffff;
+      --text-primary: #0a1628;
+      --text-secondary: #495a75;
+      --text-muted: #7b8aa3;
+      --border-subtle: rgba(0,48,135,0.10);
+      --shadow-card: 0 4px 16px rgba(10,22,40,0.08);
+      --shadow-glow: 0 0 20px rgba(0,180,216,0.15);
+      --shadow-deep: 0 12px 40px rgba(10,22,40,0.10);
+    }
+    html[data-theme="light"] body { background: var(--bg-primary); color: var(--text-primary); }
+    html[data-theme="light"] .sidebar { background: var(--bg-sidebar); border-right: 1px solid var(--border-subtle); }
+    html[data-theme="light"] .nav-item { color: var(--text-secondary); }
+    html[data-theme="light"] .nav-item:hover, html[data-theme="light"] .nav-item.active { color: var(--greko-blue); background: rgba(0,48,135,0.06); }
+    html[data-theme="light"] .topbar { background: var(--bg-secondary); border-bottom: 1px solid var(--border-subtle); }
+    html[data-theme="light"] .kpi-card, html[data-theme="light"] .chart-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle); box-shadow: var(--shadow-card);
+    }
+    html[data-theme="light"] .data-table th { background: #f0f4fb; color: var(--text-primary); }
+    html[data-theme="light"] .data-table td { border-color: var(--border-subtle); color: var(--text-primary); }
+    html[data-theme="light"] .measure-toggle, html[data-theme="light"] .month-filter, html[data-theme="light"] .theme-toggle {
+      background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
+    }
+    html[data-theme="light"] .measure-btn { color: var(--text-secondary); }
+    html[data-theme="light"] .q-btn { background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-secondary); }
+    html[data-theme="light"] .insight-item { background: var(--bg-card); border: 1px solid var(--border-subtle); }
+    html[data-theme="light"] .insight-val { color: var(--text-primary); }
   </style>
 </head>
 <body>
