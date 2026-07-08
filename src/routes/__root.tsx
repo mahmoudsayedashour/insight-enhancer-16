@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Greko Egypt – YTD Sales Dashboard" },
+      { name: "description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Greko Egypt – YTD Sales Dashboard" },
+      { property: "og:description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Greko Egypt – YTD Sales Dashboard" },
+      { name: "twitter:description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/82d6b46c-b9ef-490c-9de8-7521541d95cc" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/82d6b46c-b9ef-490c-9de8-7521541d95cc" },
     ],
     links: [
       {

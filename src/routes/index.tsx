@@ -7,7 +7,7 @@ export const Route = createFileRoute("/")({
       { title: "Greko Egypt – YTD Sales Dashboard" },
       { name: "description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
       { property: "og:title", content: "Greko Egypt – YTD Sales Dashboard" },
-      { property: "og:description", content: "Executive sales analytics for Greko Egypt." },
+      { property: "og:description", content: "Greko Egypt sales analytics dashboard with executive KPIs, SKU performance, customer, channel and year-over-year comparisons." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
