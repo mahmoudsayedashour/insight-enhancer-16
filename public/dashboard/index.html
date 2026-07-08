@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Greko Egypt – YTD Dashboard</title>
+  <meta name="description" content="Greko Egypt sales analytics dashboard">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Measure Toggle Switch */
+    .measure-toggle {
+      display: flex;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 4px;
+      gap: 4px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .measure-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .measure-btn.active {
+      background: var(--accent-blue);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0,82,204,0.3);
+    }
+    /* Insight Panel */
+    .insights-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .insight-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .insight-item i { font-size: 20px; }
+    .insight-details { display: flex; flex-direction: column; gap: 4px; }
+    .insight-lbl { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;}
+    .insight-val { font-size: 14px; color: #fff; font-weight: 700; line-height: 1.3;}
+    
+    /* Quarter Slicer */
+    .q-slicer {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .q-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 8px 24px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .q-btn:hover { background: rgba(255,255,255,0.05); }
+    .q-btn.active {
+      background: var(--accent-cyan);
+      color: #0a1628;
+      border-color: var(--accent-cyan);
+    }
+    
+    /* Tables */
+    .data-table th { cursor: pointer; user-select: none; }
+    .data-table th:hover { background: rgba(255,255,255,0.05); }
+    .data-table th::after { content: ' \2195'; opacity: 0.3; font-size: 10px; margin-left: 4px;}
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="greko_logo.png" alt="Greko Egypt" class="brand-logo"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="brand-text-fallback" style="display:none;flex-direction:column;align-items:center;gap:2px">
+        <span class="brand-greko">greko</span><span class="brand-egypt">EGYPT</span>
+      </div>
+    </div>
+    <div class="sidebar-year-badge" id="ytd-label-top">Jan-Jun 25 vs Jan-Jul 26</div>
+    <ul class="nav-menu">
+      <li><a href="#" class="nav-item active" data-page="home"><span class="nav-icon">🏠</span><span class="nav-label">Executive Dashboard</span></a></li>
+      <li><a href="#" class="nav-item" data-page="ytd"><span class="nav-icon">📊</span><span class="nav-label">YTD Performance</span></a></li>
+      <li><a href="#" class="nav-item" data-page="products"><span class="nav-icon">🧀</span><span class="nav-label">Product Analysis</span></a></li>
+      <li><a href="#" class="nav-item" data-page="customers"><span class="nav-icon">👥</span><span class="nav-label">Customer Analysis</span></a></li>
+      <li><a href="#" class="nav-item" data-page="returns"><span class="nav-icon">↩️</span><span class="nav-label">Returns Analysis</span></a></li>
+      <li><a href="#" class="nav-item" data-page="growth"><span class="nav-icon">📈</span><span class="nav-label">Growth Analysis</span></a></li>
+      <li><a href="#" class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="nav-label">Monthly Trend</span></a></li>
+      <li><a href="#" class="nav-item" data-page="quarterly"><span class="nav-icon">📋</span><span class="nav-label">Quarterly Dashboard</span></a></li>
+      <li><a href="#" class="nav-item" data-page="comparison"><span class="nav-icon">⚖️</span><span class="nav-label">Year Comparison</span></a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="data-refresh">Updated: <span id="last-update">–</span></div>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content" id="main-content">
+    <div class="topbar">
+      <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰</button>
+      <div class="topbar-title" id="page-title">Executive Dashboard</div>
+      <div class="topbar-actions">
+        <!-- Global Slicer -->
+        <div class="measure-toggle">
+          <button class="measure-btn active" data-measure="ton">Ton</button>
+          <button class="measure-btn" data-measure="carton">Carton</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pages -->
+    <div class="page active" id="page-home"></div>
+    <div class="page" id="page-ytd"></div>
+    <div class="page" id="page-products"></div>
+    <div class="page" id="page-customers"></div>
+    <div class="page" id="page-returns"></div>
+    <div class="page" id="page-growth"></div>
+    <div class="page" id="page-monthly"></div>
+    <div class="page" id="page-quarterly"></div>
+    <div class="page" id="page-comparison"></div>
+  </main>
+
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loader-box">
+      <div class="loader-spinner"></div>
+      <div class="loader-text">Loading Data…</div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
