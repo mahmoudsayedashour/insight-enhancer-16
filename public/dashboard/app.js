@@ -115,7 +115,7 @@ function filteredNote(text){
 
 // ── Page Routing ─────────────────────────────────────────────────
 const PAGE_TITLES = {
-  home:'Executive Dashboard', ytd:'SKU YTD Performance',
+  home:'Greko Company Dashboard', ytd:'SKU YTD Performance',
   channel:'Channel Performance',
   customers:'Customer Analysis', returns:'Returns Analysis',
   growth:'Growth Analysis', monthly:'Monthly Trend',
