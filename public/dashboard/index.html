@@ -214,8 +214,10 @@
         <div class="measure-toggle">
           <button class="measure-btn active" data-measure="ton">Ton</button>
           <button class="measure-btn" data-measure="carton">Carton</button>
+          <button class="measure-btn" data-measure="gross">Gross</button>
         </div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">🌙</button>
+        <button class="theme-toggle" id="logout-btn" title="Sign out" aria-label="Sign out">⎋</button>
       </div>
     </div>
 
@@ -238,7 +240,36 @@
     </div>
   </div>
 
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <script>
+    // Auth gate: redirect unauthenticated visitors to the login screen.
+    if(localStorage.getItem('greko_auth')!=='1'){ location.replace('login.html'); }
+  </script>
+  <script>
+    // Load workbook-derived data. Prefers the live server endpoint (auto-refreshes
+    // from the Google Spreadsheet); falls back to the precomputed data.json.
+    (async function loadData(){
+      const overlay = document.getElementById('loading-overlay');
+      async function fetchJSON(url){ const r = await fetch(url,{cache:'no-store'}); if(!r.ok) throw 0; return r.json(); }
+      let data = null;
+      try { data = await fetchJSON('/api/public/dashboard-data'); }
+      catch(_){ try { data = await fetchJSON('data.json'); } catch(__){} }
+      if(!data){
+        overlay.querySelector('.loader-text').textContent = 'Failed to load data';
+        return;
+      }
+      window.GREKO_DATA = data;
+      // Boot app after data is available
+      const s = document.createElement('script');
+      s.src = 'app.js';
+      document.body.appendChild(s);
+    })();
+    // Wire logout
+    document.addEventListener('click', e => {
+      if(e.target && e.target.id === 'logout-btn'){
+        localStorage.removeItem('greko_auth');
+        location.replace('login.html');
+      }
+    });
+  </script>
 </body>
 </html>
