@@ -115,11 +115,11 @@ function filteredNote(text){
 
 // ── Page Routing ─────────────────────────────────────────────────
 const PAGE_TITLES = {
-  home:'Greko Company Dashboard', ytd:'SKU YTD Performance',
+  home:'YTD Greko Egypt Dashboard', ytd:'SKU YTD Performance',
   channel:'Channel Performance',
   customers:'Customer Analysis', returns:'Returns Analysis',
   growth:'Growth Analysis', monthly:'Monthly Trend',
-  quarterly:'Quarterly Dashboard', comparison:'Year Comparison'
+  quarterly:'Quarterly Dashboard'
 };
 function go(page){
   if(!PAGE_TITLES[page]) return;
@@ -136,7 +136,14 @@ function renderPage(){
   if(!D) return;
   ({home:pgHome, ytd:pgYTD, channel:pgChannel, customers:pgCustomers,
     returns:pgReturns, growth:pgGrowth, monthly:pgMonthly,
-    quarterly:pgQuarterly, comparison:pgComparison}[currentPage]||(()=>{}))(D);
+    quarterly:pgQuarterly}[currentPage]||(()=>{}))(D);
+  // Merged view: render Year-Comparison content beneath the Executive dashboard on Home.
+  if(currentPage === 'home' && typeof pgComparison === 'function'){
+    pgComparison(D);
+    const src = document.getElementById('page-comparison');
+    const slot = document.getElementById('cmp-inline-slot');
+    if(src && slot){ slot.innerHTML = ''; while(src.firstChild) slot.appendChild(src.firstChild); }
+  }
 
   document.querySelectorAll('th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
@@ -693,14 +700,10 @@ function pgComparison(D){
   const gR = grow(m.r26, m.r25);
   const cats = [...D.category_data];
 
-  // Best/worst growing products
+  // Best/worst growing products (Customer growth ranking removed per request)
   const prods = D.product_data.filter(p=>p[curM].s25>0);
   const bestP = [...prods].sort((a,b)=>grow(b[curM].s26,b[curM].s25)-grow(a[curM].s26,a[curM].s25)).slice(0,5);
   const worstP = [...prods].sort((a,b)=>grow(a[curM].s26,a[curM].s25)-grow(b[curM].s26,b[curM].s25)).slice(0,5);
-
-  // Best performing customers by growth
-  const cs = D.customer_data.filter(c=>c[curM].s25>0 && c[curM].s26>0);
-  const bestC = [...cs].sort((a,b)=>grow(b[curM].s26,b[curM].s25)-grow(a[curM].s26,a[curM].s25)).slice(0,5);
 
   document.getElementById('page-comparison').innerHTML=`
     ${filteredNote(monthLabel(D))}
@@ -738,12 +741,6 @@ function pgComparison(D){
         <table class="data-table"><thead><tr><th>Product</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth</th></tr></thead>
         <tbody>${worstP.map(p=>`<tr><td>${p.product}</td><td class="num">${fmt(p[curM].s25)}</td><td class="num">${fmt(p[curM].s26)}</td><td class="num">${badge(fmtP(grow(p[curM].s26,p[curM].s25)),'badge-down')}</td></tr>`).join('')}</tbody></table>
       </div>
-    </div>
-
-    <div class="chart-card" style="margin-top:20px">
-      <div class="chart-header"><div class="chart-title">🏆 Best Performing Customers (by growth)</div></div>
-      <table class="data-table"><thead><tr><th>Customer</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth</th></tr></thead>
-      <tbody>${bestC.map(c=>`<tr><td>${c.customer}</td><td class="num">${fmt(c[curM].s25)}</td><td class="num">${fmt(c[curM].s26)}</td><td class="num">${badge(fmtP(grow(c[curM].s26,c[curM].s25)),'badge-up')}</td></tr>`).join('')}</tbody></table>
     </div>
   `;
 
