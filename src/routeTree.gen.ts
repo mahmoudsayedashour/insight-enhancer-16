@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicDashboardDataRouteImport } from './routes/api/public/dashboard-data'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicDashboardDataRoute = ApiPublicDashboardDataRouteImport.update({
+  id: '/api/public/dashboard-data',
+  path: '/api/public/dashboard-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/dashboard-data': typeof ApiPublicDashboardDataRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/dashboard-data': typeof ApiPublicDashboardDataRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/dashboard-data': typeof ApiPublicDashboardDataRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/public/dashboard-data'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/public/dashboard-data'
+  id: '__root__' | '/' | '/api/public/dashboard-data'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicDashboardDataRoute: typeof ApiPublicDashboardDataRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/dashboard-data': {
+      id: '/api/public/dashboard-data'
+      path: '/api/public/dashboard-data'
+      fullPath: '/api/public/dashboard-data'
+      preLoaderRoute: typeof ApiPublicDashboardDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicDashboardDataRoute: ApiPublicDashboardDataRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
