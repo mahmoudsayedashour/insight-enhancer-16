@@ -89,10 +89,11 @@ async function buildPayload() {
   const res = await fetch(WORKBOOK_URL, { cf: { cacheEverything: false } } as RequestInit);
   if (!res.ok) throw new Error(`Workbook fetch failed: ${res.status}`);
   const buf = await res.arrayBuffer();
-  const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: false, dense: true });
+  const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: false });
+  console.log("[dashboard-data] sheets:", wb.SheetNames);
 
   const sheet = (name: string) => {
-    if (!wb.Sheets[name]) throw new Error(`Missing sheet: ${name}`);
+    if (!wb.Sheets[name]) throw new Error(`Missing sheet "${name}". Available: ${wb.SheetNames.join(", ")}`);
     return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[name], { defval: null, raw: true });
   };
 
