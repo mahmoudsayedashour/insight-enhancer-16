@@ -244,23 +244,30 @@
     if(localStorage.getItem('greko_auth')!=='1'){ location.replace('login.html'); }
   </script>
   <script>
-    // Load workbook-derived data. Prefers the live server endpoint (auto-refreshes
-    // from the Google Spreadsheet); falls back to the precomputed data.json.
+    // Load workbook-derived data live from the server pipeline.
+    // The server fetches the .xlsx from Vercel Blob, parses it with SheetJS,
+    // applies Power-BI DAX aggregation and returns compact JSON (60s cache).
+    // The workbook is the ONLY source of truth — no local JSON file.
     (async function loadData(){
       const overlay = document.getElementById('loading-overlay');
-      async function fetchJSON(url){ const r = await fetch(url,{cache:'no-store'}); if(!r.ok) throw 0; return r.json(); }
-      let data = null;
-      try { data = await fetchJSON('/api/public/dashboard-data'); }
-      catch(_){ try { data = await fetchJSON('data.json'); } catch(__){} }
-      if(!data){
-        overlay.querySelector('.loader-text').textContent = 'Failed to load data';
-        return;
+      const setMsg = t => { const el = overlay.querySelector('.loader-text'); if(el) el.textContent = t; };
+      setMsg('Fetching workbook…');
+      try {
+        const r = await fetch('/api/public/dashboard-data', { cache: 'no-store' });
+        if(!r.ok){
+          const body = await r.text();
+          setMsg('Data pipeline error ('+r.status+'). See console.');
+          console.error('dashboard-data error', r.status, body);
+          return;
+        }
+        window.GREKO_DATA = await r.json();
+        const s = document.createElement('script');
+        s.src = 'app.js';
+        document.body.appendChild(s);
+      } catch(e){
+        console.error(e);
+        setMsg('Failed to reach data pipeline. See console.');
       }
-      window.GREKO_DATA = data;
-      // Boot app after data is available
-      const s = document.createElement('script');
-      s.src = 'app.js';
-      document.body.appendChild(s);
     })();
     // Wire logout
     document.addEventListener('click', e => {
