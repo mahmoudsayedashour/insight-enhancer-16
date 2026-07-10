@@ -203,6 +203,8 @@ function pgHome(D){
       ${card('📈 Category Growth Comparison','2025 vs 2026',cw('ch-h-catgrow','280'))}
       ${card('🎯 Achievement by Category','Ach% 2025 vs 2026',cw('ch-h-ach','320'))}
     </div>
+
+    <div id="cmp-inline-slot" style="margin-top:8px"></div>
   `;
 
   setTimeout(()=>{
