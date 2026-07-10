@@ -90,11 +90,19 @@ async function buildPayload() {
   if (!res.ok) throw new Error(`Workbook fetch failed: ${res.status}`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: false });
-  console.log("[dashboard-data] sheets:", wb.SheetNames);
+  console.log("[dashboard-data] SheetNames:", JSON.stringify(wb.SheetNames), "Sheets keys:", JSON.stringify(Object.keys(wb.Sheets)));
 
+  // Robust lookup: SheetNames array is authoritative; some SheetJS builds keep
+  // Sheets as a Proxy where keys(...) doesn't enumerate. Match by trimmed name.
+  const sheetIndex: Record<string, XLSX.WorkSheet> = {};
+  for (const nm of wb.SheetNames) {
+    const ws = wb.Sheets[nm];
+    if (ws) sheetIndex[nm.trim()] = ws;
+  }
   const sheet = (name: string) => {
-    if (!wb.Sheets[name]) throw new Error(`Missing sheet "${name}". Available: ${wb.SheetNames.join(", ")}`);
-    return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[name], { defval: null, raw: true });
+    const ws = sheetIndex[name.trim()];
+    if (!ws) throw new Error(`Missing sheet "${name}". SheetNames=${JSON.stringify(wb.SheetNames)} indexed=${JSON.stringify(Object.keys(sheetIndex))}`);
+    return XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null, raw: true });
   };
 
   const mainData   = sheet("Main Data");
