@@ -288,17 +288,25 @@ async function buildPayload() {
     }
   }
 
-  // ── Actual 2026 (Number Type INV / RINV, Num Ton / Num Carton / Amount) ──
+  // ── Actual 2026 — Power BI DAX calc order (Sales table) ──
+  // Every row contributes to sum26 (Σ Num Ton). Rows where
+  // LEFT(UPPER(Invoice lines/Reference),1) = "R" are Partial Returns (pr26).
+  // Rows where Number Type = "RINV" contribute to rinv26. Sales/Returns are
+  // derived after aggregation. Filter: Delivery Date, year = 2026.
   let max26 = 0;
   const customerSet26 = new Set<string>();
   for (const r of actual26) {
-    const d = coerceDate(r["Date"]) ?? coerceDate(r["Delivery Date"]);
+    const d = coerceDate(r["Delivery Date"]) ?? coerceDate(r["Date"]);
     const month = monthOf(d);
     const year  = yearOf(d);
     if (!month || year !== 2026) continue;
     if (month > max26) max26 = month;
 
     const numberType = String(r["Invoice lines/Number Type"] ?? "").trim().toUpperCase();
+    const reference  = String(r["Invoice lines/Reference"] ?? "").trim();
+    const isRINV = numberType === "RINV";
+    const isPR   = reference.length > 0 && reference[0].toUpperCase() === "R";
+
     const code = String(r["Code"] ?? "").trim();
     const cat  = codeCategory.get(code) || "Uncategorized";
     const product = String(r["Invoice lines/Product"] ?? "").trim() || codeProduct.get(code) || code;
@@ -308,36 +316,30 @@ async function buildPayload() {
     const ton   = num(r["Num Ton"]);
     const carton= num(r["Num Carton"]);
     const gross = num(r["Invoice lines/Amount in Currency"]);
+    if (!ton && !carton && !gross) continue;
 
-    if (numberType === "INV") {
-      addSales(byMonth[month-1], 26, ton, carton, gross);
-      addSales(ensureCatMonth(cat)[month-1], 26, ton, carton, gross);
-      addSales(ensureChannelMonth(channel)[month-1], 26, ton, carton, gross);
-      if (code) addSales(ensureProduct(code, product, cat).buckets, 26, ton, carton, gross);
-      if (partnerRaw) {
-        addSales(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 26, ton, carton, gross);
-        if (product && ton > 0) {
-          const m = custSkuSales.get(partnerRaw) ?? new Map<string, number>();
-          m.set(product, (m.get(product) ?? 0) + ton);
-          custSkuSales.set(partnerRaw, m);
-        }
-      }
+    const targets: UnitBuckets[] = [
+      byMonth[month-1],
+      ensureCatMonth(cat)[month-1],
+      ensureChannelMonth(channel)[month-1],
+    ];
+    if (code) targets.push(ensureProduct(code, product, cat).buckets);
+    if (partnerRaw) {
+      targets.push(ensureCustomer(partnerRaw, partnerRaw, channel).buckets);
       customerSet26.add(partnerRaw);
-    } else if (numberType === "RINV") {
-      addReturn(byMonth[month-1], 26, ton, carton, gross);
-      addReturn(ensureCatMonth(cat)[month-1], 26, ton, carton, gross);
-      addReturn(ensureChannelMonth(channel)[month-1], 26, ton, carton, gross);
-      if (code) addReturn(ensureProduct(code, product, cat).buckets, 26, ton, carton, gross);
-      if (partnerRaw) {
-        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 26, ton, carton, gross);
-        if (product && Math.abs(ton) > 0) {
-          const m = custSkuReturns.get(partnerRaw) ?? new Map<string, number>();
-          m.set(product, (m.get(product) ?? 0) + Math.abs(ton));
-          custSkuReturns.set(partnerRaw, m);
-        }
+      if (product) {
+        const m = cust26Sku.get(partnerRaw) ?? new Map<string, SkuComp26>();
+        const c = m.get(product) ?? { sum:0, pr:0, rinv:0 };
+        c.sum += ton;
+        if (isRINV) c.rinv += ton;
+        if (isPR)   c.pr   += Math.abs(ton);
+        m.set(product, c);
+        cust26Sku.set(partnerRaw, m);
       }
     }
+    for (const b of targets) add26Row(b, ton, carton, gross, isRINV, isPR);
   }
+
 
   // ── Populate Target buckets on all aggregations (per-month × unit) ──
   for (let mi = 0; mi < 12; mi++) {
