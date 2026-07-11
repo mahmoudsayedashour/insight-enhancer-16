@@ -245,6 +245,7 @@ async function buildPayload() {
     const month = (dYear === 2025 && dMonth) ? dMonth : num(r["Month ID"]);
     if (!month || month < 1 || month > 12) continue;
     if (dYear && dYear !== 2025) continue;
+    if (month > 6) continue; // validation window: Jan..Jun
     if (month > max25) max25 = month;
     const cat = String(r["Product Category"] ?? "").trim() || "Uncategorized";
     const code = String(r["Code"] ?? "").trim();
