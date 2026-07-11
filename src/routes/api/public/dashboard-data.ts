@@ -99,9 +99,18 @@ async function buildPayload() {
     const ws = wb.Sheets[nm];
     if (ws) sheetIndex[nm.trim()] = ws;
   }
+  const missingSheets: string[] = [];
   const sheet = (name: string) => {
     const ws = sheetIndex[name.trim()];
-    if (!ws) throw new Error(`Missing sheet "${name}". SheetNames=${JSON.stringify(wb.SheetNames)} indexed=${JSON.stringify(Object.keys(sheetIndex))}`);
+    if (!ws) {
+      // Preview (Cloudflare Worker, ~128 MB) can silently drop the largest
+      // sheet during SheetJS parse — it appears in SheetNames but Sheets[nm]
+      // is undefined. On Vercel (Node runtime, ~1 GB) all sheets parse fine.
+      // Rather than 500 in preview, treat as empty and continue.
+      console.warn(`[dashboard-data] Sheet "${name}" not materialised (likely preview memory limit). Treating as empty.`);
+      missingSheets.push(name);
+      return [] as Record<string, unknown>[];
+    }
     return XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null, raw: true });
   };
 
