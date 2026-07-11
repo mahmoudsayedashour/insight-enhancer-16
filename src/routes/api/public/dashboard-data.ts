@@ -374,8 +374,8 @@ async function buildPayload() {
   for (const [code, p] of byProduct) {
     const t25 = targetByCode[25].get(code);
     const t26 = targetByCode[26].get(code);
-    if (t25) for (let mi = 0; mi < 12; mi++) addTarget(p.buckets, 25, t25[mi].ton, t25[mi].carton);
-    if (t26) for (let mi = 0; mi < 12; mi++) addTarget(p.buckets, 26, t26[mi].ton, t26[mi].carton);
+    if (t25) for (let mi = 0; mi < 6; mi++) addTarget(p.buckets, 25, t25[mi].ton, t25[mi].carton);
+    if (t26) for (let mi = 0; mi < 6; mi++) addTarget(p.buckets, 26, t26[mi].ton, t26[mi].carton);
   }
 
   // ── Equivalent-period aggregation ──
