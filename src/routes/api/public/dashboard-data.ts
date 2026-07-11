@@ -222,9 +222,12 @@ async function buildPayload() {
   const byProduct = new Map<string, { name:string; category:string; buckets: UnitBuckets }>();
   const byCustomer = new Map<string, { partner:string; channel:string; buckets: UnitBuckets }>();
   const byChannelMonth = new Map<string, Array<UnitBuckets>>();        // channel → [12]
-  // Customer × SKU (Ton) for Top Selling / Top Returned per customer
-  const custSkuSales   = new Map<string, Map<string, number>>();
-  const custSkuReturns = new Map<string, Map<string, number>>();
+  // Customer × SKU — 2025 uses direct sales/return columns; 2026 stores raw
+  // DAX components per SKU and derives Sales/Returns after aggregation.
+  const custSkuSales   = new Map<string, Map<string, number>>();  // 25 only
+  const custSkuReturns = new Map<string, Map<string, number>>();  // 25 only
+  type SkuComp26 = { sum:number; pr:number; rinv:number };
+  const cust26Sku = new Map<string, Map<string, SkuComp26>>();
 
   function ensureCatMonth(cat:string){ let a = byCategoryMonth.get(cat); if(!a){ a = Array.from({length:12}, emptyUnits); byCategoryMonth.set(cat, a);} return a; }
   function ensureChannelMonth(ch:string){ let a = byChannelMonth.get(ch); if(!a){ a = Array.from({length:12}, emptyUnits); byChannelMonth.set(ch, a);} return a; }
