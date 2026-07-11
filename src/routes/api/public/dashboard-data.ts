@@ -29,11 +29,30 @@ const MONTH_NAMES = ["January","February","March","April","May","June",
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 type Unit = "ton" | "carton" | "gross";
-type Bucket = { s25:number; s26:number; r25:number; r26:number; tgt25:number; tgt26:number };
+// Power-BI DAX calc order for 2026 (Sales table):
+//   pr26  = Σ |v| where LEFT(UPPER(Invoice lines/Reference),1) = "R"   (Partial Returns)
+//   rinv26 = Σ v where Invoice lines/Number Type = "RINV"              (signed)
+//   sum26  = Σ v over all rows                                          (signed)
+//   r26    = | rinv26 - pr26 |
+//   s26    = sum26 - pr26 - r26
+// s26/r26 are derived after aggregation — NEVER accumulated directly.
+type Bucket = {
+  s25:number; s26:number; r25:number; r26:number; tgt25:number; tgt26:number;
+  sum26:number; pr26:number; rinv26:number;
+};
 type UnitBuckets = Record<Unit, Bucket>;
 
-const emptyBucket = (): Bucket => ({ s25:0, s26:0, r25:0, r26:0, tgt25:0, tgt26:0 });
+const emptyBucket = (): Bucket => ({ s25:0, s26:0, r25:0, r26:0, tgt25:0, tgt26:0, sum26:0, pr26:0, rinv26:0 });
 const emptyUnits  = (): UnitBuckets => ({ ton:emptyBucket(), carton:emptyBucket(), gross:emptyBucket() });
+
+// Derive s26/r26 from raw component sums per the DAX order above.
+function derive26(b: UnitBuckets) {
+  (["ton","carton","gross"] as Unit[]).forEach(u => {
+    const x = b[u];
+    x.r26 = Math.abs(x.rinv26 - x.pr26);
+    x.s26 = x.sum26 - x.pr26 - x.r26;
+  });
+}
 
 // Robust date-parser — Actual 25 uses Excel serial numbers; Actual 2026 sometimes
 // has a full text "Wednesday, June 24, 2026" in Delivery Date instead of Date.
