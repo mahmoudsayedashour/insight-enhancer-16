@@ -305,6 +305,7 @@ async function buildPayload() {
     const month = monthOf(d);
     const year  = yearOf(d);
     if (!month || year !== 2026) continue;
+    if (month > 6) continue; // validation window: Jan..Jun
     if (month > max26) max26 = month;
 
     const numberType = String(r["Invoice lines/Number Type"] ?? "").trim().toUpperCase();
