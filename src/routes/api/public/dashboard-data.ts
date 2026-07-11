@@ -413,6 +413,7 @@ async function buildPayload() {
       customers_26: customerSet26.size,
       generated_at: new Date().toISOString(),
       source: "vercel-blob:xlsx",
+      missing_sheets: missingSheets,
       build_ms: 0, // filled below
     },
     product_data: productData,
