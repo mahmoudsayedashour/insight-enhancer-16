@@ -234,12 +234,17 @@ async function buildPayload() {
   function ensureProduct(code:string, name:string, cat:string){ let p = byProduct.get(code); if(!p){ p = { name, category: cat, buckets: emptyUnits() }; byProduct.set(code, p);} return p; }
   function ensureCustomer(key:string, partner:string, channel:string){ let c = byCustomer.get(key); if(!c){ c = { partner, channel, buckets: emptyUnits() }; byCustomer.set(key, c);} return c; }
 
-  // ── Actual 25 (has explicit sales/return columns and Month ID) ──
+  // ── Actual 25 — pre-calculated Sales/Return columns; filter by Delivery Date.
   let max25 = 0;
   const customerSet25 = new Set<string>();
   for (const r of actual25) {
-    const month = num(r["Month ID"]);
-    if (!month) continue;
+    const d = coerceDate(r["Delivery Date"]) ?? coerceDate(r["Date"]);
+    const dMonth = monthOf(d);
+    const dYear  = yearOf(d);
+    // Prefer Delivery Date; fall back to Month ID only when the row has no date.
+    const month = (dYear === 2025 && dMonth) ? dMonth : num(r["Month ID"]);
+    if (!month || month < 1 || month > 12) continue;
+    if (dYear && dYear !== 2025) continue;
     if (month > max25) max25 = month;
     const cat = String(r["Product Category"] ?? "").trim() || "Uncategorized";
     const code = String(r["Code"] ?? "").trim();
