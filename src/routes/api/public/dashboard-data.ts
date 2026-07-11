@@ -234,12 +234,18 @@ async function buildPayload() {
   function ensureProduct(code:string, name:string, cat:string){ let p = byProduct.get(code); if(!p){ p = { name, category: cat, buckets: emptyUnits() }; byProduct.set(code, p);} return p; }
   function ensureCustomer(key:string, partner:string, channel:string){ let c = byCustomer.get(key); if(!c){ c = { partner, channel, buckets: emptyUnits() }; byCustomer.set(key, c);} return c; }
 
-  // ── Actual 25 (has explicit sales/return columns and Month ID) ──
+  // ── Actual 25 — pre-calculated Sales/Return columns; filter by Delivery Date.
   let max25 = 0;
   const customerSet25 = new Set<string>();
   for (const r of actual25) {
-    const month = num(r["Month ID"]);
-    if (!month) continue;
+    const d = coerceDate(r["Delivery Date"]) ?? coerceDate(r["Date"]);
+    const dMonth = monthOf(d);
+    const dYear  = yearOf(d);
+    // Prefer Delivery Date; fall back to Month ID only when the row has no date.
+    const month = (dYear === 2025 && dMonth) ? dMonth : num(r["Month ID"]);
+    if (!month || month < 1 || month > 12) continue;
+    if (dYear && dYear !== 2025) continue;
+    if (month > 6) continue; // validation window: Jan..Jun
     if (month > max25) max25 = month;
     const cat = String(r["Product Category"] ?? "").trim() || "Uncategorized";
     const code = String(r["Code"] ?? "").trim();
@@ -300,6 +306,7 @@ async function buildPayload() {
     const month = monthOf(d);
     const year  = yearOf(d);
     if (!month || year !== 2026) continue;
+    if (month > 6) continue; // validation window: Jan..Jun
     if (month > max26) max26 = month;
 
     const numberType = String(r["Invoice lines/Number Type"] ?? "").trim().toUpperCase();
@@ -361,10 +368,13 @@ async function buildPayload() {
     if (t26) for (let mi = 0; mi < 12; mi++) addTarget(p.buckets, 26, t26[mi].ton, t26[mi].carton);
   }
 
-  // ── Equivalent-period aggregation: YTD = 1..max26 in BOTH years ──
+  // ── Equivalent-period aggregation ──
+  // Validation window: Jan..Jun in BOTH years (per Power BI PDF reference).
+  // Cap by whatever the latest actual month is in 2026 (in case only Jan..May exists).
   const maxMonth26 = max26 || 12;
   const maxMonth25 = max25 || 12;
-  const ytdRange = maxMonth26; // strictly Jan..maxMonth26 in both years (PBI logic)
+  const VALIDATION_CAP = 6; // June
+  const ytdRange = Math.min(maxMonth26 || VALIDATION_CAP, VALIDATION_CAP);
 
   // Sum linear component fields across months, then derive s26/r26 per DAX.
   const COMP_KEYS: Array<keyof Bucket> = ["s25","r25","tgt25","tgt26","sum26","pr26","rinv26"];
