@@ -81,17 +81,31 @@ const num = (v: unknown): number => {
 };
 
 // Aggregate helpers -----------------------------------------------------------
-function addSales(b: UnitBuckets, year: 25 | 26, ton: number, carton: number, gross: number) {
-  const k = year === 25 ? "s25" : "s26";
-  b.ton[k]    += ton;
-  b.carton[k] += carton;
-  b.gross[k]  += gross;
+function addSales(b: UnitBuckets, year: 25, ton: number, carton: number, gross: number) {
+  b.ton.s25    += ton;
+  b.carton.s25 += carton;
+  b.gross.s25  += gross;
 }
-function addReturn(b: UnitBuckets, year: 25 | 26, ton: number, carton: number, gross: number) {
-  const k = year === 25 ? "r25" : "r26";
-  b.ton[k]    += Math.abs(ton);
-  b.carton[k] += Math.abs(carton);
-  b.gross[k]  += Math.abs(gross);
+function addReturn(b: UnitBuckets, year: 25, ton: number, carton: number, gross: number) {
+  b.ton.r25    += Math.abs(ton);
+  b.carton.r25 += Math.abs(carton);
+  b.gross.r25  += Math.abs(gross);
+}
+// 2026 raw-component adder — feeds sum26/pr26/rinv26; s26/r26 derived later.
+function add26Row(
+  b: UnitBuckets,
+  ton: number, carton: number, gross: number,
+  isRINV: boolean, isPartialReturn: boolean,
+) {
+  b.ton.sum26    += ton;    b.carton.sum26 += carton; b.gross.sum26  += gross;
+  if (isRINV) {
+    b.ton.rinv26 += ton;    b.carton.rinv26 += carton; b.gross.rinv26 += gross;
+  }
+  if (isPartialReturn) {
+    b.ton.pr26    += Math.abs(ton);
+    b.carton.pr26 += Math.abs(carton);
+    b.gross.pr26  += Math.abs(gross);
+  }
 }
 function addTarget(b: UnitBuckets, year: 25 | 26, ton: number, carton: number) {
   const k = year === 25 ? "tgt25" : "tgt26";
