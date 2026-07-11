@@ -254,16 +254,26 @@ async function buildPayload() {
     const channel = String(r["channel"] ?? "").trim() || custChannel.get(partnerRaw) || "Other";
     const type = String(r["Type"] ?? "").trim();
 
-    const sTon = num(r["Sales -Ton"]);
-    const sCar = num(r["Sales - Carton"]);
-    const rTon = num(r["Return - Ton2"]);
-    const rCar = num(r["Return - Carton"]);
-    // Amount fields: "Sales Amount/1M" & "Return Amount/1M+" appear pre-scaled by /1e6.
-    // Multiply back to raw currency (EGP) for gross.
-    const sGross = num(r["Sales Amount/1M"]) * 1_000_000;
-    const rGross = num(r["Return Amount/1M+"]) * 1_000_000;
+    // Actual 25 raw-column reality (verified against the workbook):
+    //   `Sales -Ton` is essentially empty (37 non-zero rows out of 409k).
+    //   `Sales - Carton` and `Return - Ton2` / `Return - Carton` are populated.
+    //   The authoritative Ton value lives in the signed `Ton` column, split
+    //   by the `Type` column: 'Sales' | 'Return' | 'P.Return'. This matches
+    //   the Power-BI DAX (Jan–Jun 2025 → Sales ≈ 434 Ton, Return ≈ 50 Ton).
+    const tonRaw = num(r["Ton"]);
+    const carRaw = num(r["Sales - Carton"]); // signed by type in the sheet
+    const grossRaw = num(r["Amount"]);       // signed by type in the sheet
+    const isSalesRow  = type === "Sales";
+    const isReturnRow = type === "Return" || type === "P.Return";
 
-    if (sTon || sCar || sGross) {
+    const sTon = isSalesRow ? tonRaw : 0;
+    const sCar = isSalesRow ? carRaw : 0;
+    const sGross = isSalesRow ? grossRaw : 0;
+    const rTonSrc = isReturnRow ? tonRaw : 0;
+    const rCarSrc = isReturnRow ? (num(r["Return - Carton"]) || carRaw) : 0;
+    const rGrossSrc = isReturnRow ? grossRaw : 0;
+
+    if (isSalesRow && (sTon || sCar || sGross)) {
       addSales(byMonth[month-1], 25, sTon, sCar, sGross);
       addSales(ensureCatMonth(cat)[month-1], 25, sTon, sCar, sGross);
       addSales(ensureChannelMonth(channel)[month-1], 25, sTon, sCar, sGross);
@@ -278,16 +288,16 @@ async function buildPayload() {
       }
       customerSet25.add(partnerRaw);
     }
-    if (rTon || rCar || rGross || type === "Return") {
-      addReturn(byMonth[month-1], 25, rTon, rCar, rGross);
-      addReturn(ensureCatMonth(cat)[month-1], 25, rTon, rCar, rGross);
-      addReturn(ensureChannelMonth(channel)[month-1], 25, rTon, rCar, rGross);
-      if (code) addReturn(ensureProduct(code, product, cat).buckets, 25, rTon, rCar, rGross);
+    if (isReturnRow && (rTonSrc || rCarSrc || rGrossSrc)) {
+      addReturn(byMonth[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
+      addReturn(ensureCatMonth(cat)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
+      addReturn(ensureChannelMonth(channel)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
+      if (code) addReturn(ensureProduct(code, product, cat).buckets, 25, rTonSrc, rCarSrc, rGrossSrc);
       if (partnerRaw) {
-        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 25, rTon, rCar, rGross);
-        if (product && Math.abs(rTon) > 0) {
+        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 25, rTonSrc, rCarSrc, rGrossSrc);
+        if (product && Math.abs(rTonSrc) > 0) {
           const m = custSkuReturns.get(partnerRaw) ?? new Map<string, number>();
-          m.set(product, (m.get(product) ?? 0) + Math.abs(rTon));
+          m.set(product, (m.get(product) ?? 0) + Math.abs(rTonSrc));
           custSkuReturns.set(partnerRaw, m);
         }
       }
