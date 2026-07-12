@@ -287,7 +287,7 @@ async function buildPayload() {
       if (code) addSales(ensureProduct(code, product, cat).buckets, 25, sTon, sCar, sGross);
       if (partnerRaw) {
         addSales(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 25, sTon, sCar, sGross);
-        if (product && sTon > 0) {
+        if (product && sTon !== 0) {
           const m = custSkuSales.get(partnerRaw) ?? new Map<string, number>();
           m.set(product, (m.get(product) ?? 0) + sTon);
           custSkuSales.set(partnerRaw, m);
