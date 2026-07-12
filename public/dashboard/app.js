@@ -93,25 +93,108 @@ function ach(v, t){ return t>0 ? (v/t*100) : 0; }
 function retP(s, r){ return (s+r)>0 ? (r/(s+r)*100) : 0; }
 function getSortHTML(label, field, cls=''){ return `<th data-sort="${field}"${cls?` class="${cls}"`:''}>${label}</th>`; }
 
-// Month filter helpers ------------------------------------------------
-// When curMonth==='ytd' we use meta totals (all YTD months).
-// When a specific month is selected we compute from monthly_data.
-function metaForCurrent(D){
-  if(curMonth==='ytd') return D.meta[curM];
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
-  if(!m) return D.meta[curM];
-  return { s25:m[curM].s25, s26:m[curM].s26, r25:m[curM].r25, r26:m[curM].r26, tgt25:m[curM].tgt25||0, tgt26:m[curM].tgt26 };
+// ── Global period filter helpers ────────────────────────────────
+// Every page reads a filtered D built by filterDataset(D). The active period
+// is a single source of truth: YTD (Jan..ytd_range), Q1, Q2, or one month.
+const PERIOD_LABELS = { ytd:'YTD', q1:'Q1 (Jan-Mar)', q2:'Q2 (Apr-Jun)' };
+function activeMonths(D){
+  const R = D?.meta?.ytd_range || 6;
+  if(curMonth === 'ytd') return Array.from({length:R}, (_,i)=>i+1);
+  if(curMonth === 'q1')  return [1,2,3];
+  if(curMonth === 'q2')  return [4,5,6];
+  const m = +curMonth;
+  return Number.isFinite(m) ? [m] : Array.from({length:R}, (_,i)=>i+1);
 }
-function monthLabel(D){
+// Sum linear components across months, then derive s26/r26 per DAX.
+const COMP_KEYS = ['s25','r25','tgt25','tgt26','sum26','pr26','rinv26'];
+const UNITS = ['ton','carton','gross'];
+function _emptyBucket(){ return { s25:0,s26:0,r25:0,r26:0,tgt25:0,tgt26:0,sum26:0,pr26:0,rinv26:0 }; }
+function _emptyUnits(){ return { ton:_emptyBucket(), carton:_emptyBucket(), gross:_emptyBucket() }; }
+function _derive26(u){
+  for(const un of UNITS){
+    const b = u[un];
+    b.r26 = Math.abs(b.rinv26 - b.pr26);
+    b.s26 = b.sum26 - b.pr26 - b.r26;
+  }
+}
+// monthly can be [{ton,carton,gross}, ...] or undefined; months are 1-indexed.
+function sumMonthly(monthly, months){
+  const out = _emptyUnits();
+  if(!Array.isArray(monthly)) return out;
+  for(const m of months){
+    const src = monthly[m-1];
+    if(!src) continue;
+    for(const un of UNITS){
+      const s = src[un]; if(!s) continue;
+      for(const k of COMP_KEYS) out[un][k] += (s[k] || 0);
+    }
+  }
+  _derive26(out);
+  return out;
+}
+// Build a shallow-cloned dataset with every axis re-aggregated for the active
+// period. Downstream renderers still access .ton / .carton / .gross exactly as
+// before — they just receive filtered numbers.
+function filterDataset(D){
+  const months = activeMonths(D);
+  const monthSet = new Set(months);
+  const attach = row => {
+    const u = sumMonthly(row.monthly, months);
+    return { ...row, ...u };
+  };
+  const meta = sumMonthly(D.monthly_data.map(m=>({ton:m.ton,carton:m.carton,gross:m.gross})), months);
+  // Derive customer × top-selling / top-returned SKU for the active period.
+  const customerTopSku = (D.customer_sku_monthly||[]).map(({partner, skus})=>{
+    let ts=null, tr=null;
+    for(const {product, monthly} of skus){
+      let s25=0,r25=0,sum26=0,pr26=0,rinv26=0;
+      for(const mi of months){ const c=monthly[mi-1]; if(!c) continue;
+        s25+=c.s25; r25+=c.r25; sum26+=c.sum26; pr26+=c.pr26; rinv26+=c.rinv26; }
+      const r26 = Math.abs(rinv26 - pr26);
+      const s26 = sum26 - pr26 - r26;
+      const salesTon = s25 + s26;
+      const retTon   = r25 + r26;
+      if(salesTon>0 && (!ts || salesTon>ts.ton)) ts = { product, ton: salesTon };
+      if(retTon>0   && (!tr || retTon>tr.ton))   tr = { product, ton: retTon };
+    }
+    return { partner, top_selling: ts, top_returned: tr };
+  });
+  return {
+    ...D,
+    _activeMonths: months,
+    meta: { ...D.meta, ton: meta.ton, carton: meta.carton, gross: meta.gross,
+      period_label: periodLabelFor(D, months) },
+    monthly_data: D.monthly_data.map(m=>({ ...m, in_ytd: monthSet.has(m.month_id) })),
+    category_data: (D.category_data||[]).map(attach)
+      .filter(c=>c.ton.s25||c.ton.s26||c.ton.r25||c.ton.r26)
+      .sort((a,b)=>(b.ton.s26+b.ton.s25)-(a.ton.s26+a.ton.s25)),
+    channel_data:  (D.channel_data ||[]).map(attach)
+      .filter(c=>c.ton.s25||c.ton.s26||c.ton.r25||c.ton.r26)
+      .sort((a,b)=>b.ton.s26-a.ton.s26),
+    product_data:  (D.product_data ||[]).map(attach),
+    customer_data: (D.customer_data||[]).map(c=>{
+      const u = sumMonthly(c.monthly, months);
+      return { partner: c.partner, customer: c.partner, channel: c.channel,
+        ton:u.ton, carton:u.carton, gross:u.gross };
+    }),
+    customer_top_sku: customerTopSku,
+  };
+}
+function periodLabelFor(D, months){
   if(curMonth==='ytd') return D.meta.ytd_label;
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
+  if(curMonth==='q1')  return 'Q1 2026 vs Q1 2025 (Jan-Mar)';
+  if(curMonth==='q2')  return 'Q2 2026 vs Q2 2025 (Apr-Jun)';
+  const m = D.monthly_data.find(x=>x.month_id===months[0]);
   return m ? `${m.month_name} 2026 vs ${m.month_name} 2025` : D.meta.ytd_label;
 }
-function isMonthFiltered(){ return curMonth!=='ytd'; }
+function metaForCurrent(D){ return D.meta[curM]; }
+function monthLabel(D){ return D.meta.period_label || D.meta.ytd_label; }
+function isMonthFiltered(){ return curMonth !== 'ytd'; }
 function filteredNote(text){
   if(!isMonthFiltered()) return '';
-  return `<div class="filter-note">📅 Month filter active (${text}). Product/customer aggregates use YTD totals unless month-level data exists.</div>`;
+  return `<div class="filter-note">📅 Page filter: <strong>${text}</strong> — every KPI, chart, table and ranking below reflects this period.</div>`;
 }
+
 
 // ── Page Routing ─────────────────────────────────────────────────
 const PAGE_TITLES = {
