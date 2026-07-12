@@ -291,13 +291,12 @@ async function buildPayload() {
       addSales(byMonth[month-1], 25, sTon, sCar, sGross);
       addSales(ensureCatMonth(cat)[month-1], 25, sTon, sCar, sGross);
       addSales(ensureChannelMonth(channel)[month-1], 25, sTon, sCar, sGross);
-      if (code) addSales(ensureProduct(code, product, cat).buckets, 25, sTon, sCar, sGross);
+      if (code) addSales(ensureProduct(code, product, cat).months[month-1], 25, sTon, sCar, sGross);
       if (partnerRaw) {
-        addSales(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 25, sTon, sCar, sGross);
+        addSales(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1], 25, sTon, sCar, sGross);
         if (product && sTon !== 0) {
-          const m = custSkuSales.get(partnerRaw) ?? new Map<string, number>();
-          m.set(product, (m.get(product) ?? 0) + sTon);
-          custSkuSales.set(partnerRaw, m);
+          const arr = ensureCustSku(partnerRaw, product);
+          arr[month-1].s25 += sTon;
         }
       }
       customerSet25.add(partnerRaw);
@@ -306,17 +305,17 @@ async function buildPayload() {
       addReturn(byMonth[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
       addReturn(ensureCatMonth(cat)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
       addReturn(ensureChannelMonth(channel)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-      if (code) addReturn(ensureProduct(code, product, cat).buckets, 25, rTonSrc, rCarSrc, rGrossSrc);
+      if (code) addReturn(ensureProduct(code, product, cat).months[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
       if (partnerRaw) {
-        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).buckets, 25, rTonSrc, rCarSrc, rGrossSrc);
+        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
         if (product && Math.abs(rTonSrc) > 0) {
-          const m = custSkuReturns.get(partnerRaw) ?? new Map<string, number>();
-          m.set(product, (m.get(product) ?? 0) + Math.abs(rTonSrc));
-          custSkuReturns.set(partnerRaw, m);
+          const arr = ensureCustSku(partnerRaw, product);
+          arr[month-1].r25 += Math.abs(rTonSrc);
         }
       }
     }
   }
+
 
   // ── Actual 2026 — Power BI DAX calc order (Sales table) ──
   // Every row contributes to sum26 (Σ Num Ton). Rows where
