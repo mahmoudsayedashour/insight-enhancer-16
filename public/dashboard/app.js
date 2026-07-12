@@ -751,10 +751,17 @@ function pgQuarterly(D){
     <div id="q-content"></div>
   `;
   document.querySelectorAll('.q-btn').forEach(btn=>{
-    btn.addEventListener('click',e=>{ qFilter=e.target.dataset.q; renderPage(); });
+    btn.addEventListener('click',e=>{
+      qFilter = e.target.dataset.q;
+      // Sync with the global page filter so the whole app reflects Q1/Q2/YTD.
+      curMonth = qFilter;
+      const sel = document.getElementById('month-filter'); if(sel) sel.value = curMonth;
+      renderPage();
+    });
   });
   const mds=[...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  const fil = qFilter==='q1' ? mds.slice(0,3) : qFilter==='q2' ? mds.slice(3,6) : mds.filter(m=>m.in_ytd);
+  const fil = mds.filter(m=>m.in_ytd);
+
   let s25=0,s26=0,t26=0,r25=0,r26=0;
   fil.forEach(m=>{s25+=m[curM].s25;s26+=m[curM].s26;t26+=m[curM].tgt26;r25+=m[curM].r25;r26+=m[curM].r26;});
   const g=grow(s26,s25), a=ach(s26,t26);
