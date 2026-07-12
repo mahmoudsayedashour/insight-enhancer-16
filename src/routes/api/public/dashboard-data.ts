@@ -418,12 +418,24 @@ async function buildPayload() {
   const ytdMonths = Array.from({length: ytdRange}, (_, i)=> i+1);
   const totalsYTD = sumRange(byMonth, ytdMonths);
 
-  // Category YTD rollup (only categories with any activity)
-  const categoryData: Array<{ category:string; ton:Bucket; carton:Bucket; gross:Bucket }> = [];
+  // Category — emit YTD summary + per-month buckets (Jan..Jun).
+  const categoryData: Array<{
+    category:string; ton:Bucket; carton:Bucket; gross:Bucket;
+    monthly: Array<{ton:Bucket; carton:Bucket; gross:Bucket}>;
+  }> = [];
   for (const [cat, arr] of byCategoryMonth) {
     const u = sumRange(arr, ytdMonths);
-    if (u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)
-      categoryData.push({ category: cat, ton: u.ton, carton: u.carton, gross: u.gross });
+    if (!(u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)) continue;
+    // Per-month buckets with derived s26/r26.
+    const monthly = arr.slice(0, 12).map(m => {
+      const c = emptyUnits();
+      (["ton","carton","gross"] as Unit[]).forEach(un => {
+        for (const k of COMP_KEYS) c[un][k] = m[un][k];
+      });
+      derive26(c);
+      return { ton: c.ton, carton: c.carton, gross: c.gross };
+    });
+    categoryData.push({ category: cat, ton: u.ton, carton: u.carton, gross: u.gross, monthly });
   }
   categoryData.sort((a,b) => (b.ton.s26 + b.ton.s25) - (a.ton.s26 + a.ton.s25));
 
@@ -453,15 +465,26 @@ async function buildPayload() {
     customerSkuMonthly.push({ partner, skus });
   }
 
-
-  // Channel YTD rollup
-  const channelData: Array<{ channel:string; ton:Bucket; carton:Bucket; gross:Bucket }> = [];
+  // Channel — emit YTD summary + per-month buckets.
+  const channelData: Array<{
+    channel:string; ton:Bucket; carton:Bucket; gross:Bucket;
+    monthly: Array<{ton:Bucket; carton:Bucket; gross:Bucket}>;
+  }> = [];
   for (const [ch, arr] of byChannelMonth) {
     const u = sumRange(arr, ytdMonths);
-    if (u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)
-      channelData.push({ channel: ch, ton: u.ton, carton: u.carton, gross: u.gross });
+    if (!(u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)) continue;
+    const monthly = arr.slice(0, 12).map(m => {
+      const c = emptyUnits();
+      (["ton","carton","gross"] as Unit[]).forEach(un => {
+        for (const k of COMP_KEYS) c[un][k] = m[un][k];
+      });
+      derive26(c);
+      return { ton: c.ton, carton: c.carton, gross: c.gross };
+    });
+    channelData.push({ channel: ch, ton: u.ton, carton: u.carton, gross: u.gross, monthly });
   }
   channelData.sort((a,b) => b.ton.s26 - a.ton.s26);
+
 
   // Monthly trend (derive per-month s26/r26 before serializing)
   for (const u of byMonth) derive26(u);
