@@ -694,7 +694,8 @@ function pgGrowth(D){
 // ═══════════════════════════════════════════════════════════════
 function pgMonthly(D){
   let md = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  if(isMonthFiltered()) md = md.filter(m=>m.month_id===+curMonth);
+  md = md.filter(m=>m.in_ytd); // in_ytd now = active period (YTD/Q1/Q2/single month)
+
   document.getElementById('page-monthly').innerHTML=`
     ${filteredNote(monthLabel(D))}
     <div class="chart-grid cols-1">
