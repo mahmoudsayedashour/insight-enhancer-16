@@ -427,46 +427,32 @@ async function buildPayload() {
   }
   categoryData.sort((a,b) => (b.ton.s26 + b.ton.s25) - (a.ton.s26 + a.ton.s25));
 
-  // Product / Customer full-window rollups — derive s26/r26 from components.
-  for (const p of byProduct.values())  derive26(p.buckets);
-  for (const c of byCustomer.values()) derive26(c.buckets);
+  // Product / Customer — emit per-month buckets so the client can filter
+  // globally by any period. Derive s26/r26 per month before serialising.
+  const trimMonths = (arr: UnitBuckets[]) =>
+    arr.slice(0, 12).map(u => { derive26(u); return { ton:u.ton, carton:u.carton, gross:u.gross }; });
 
   const productData = [...byProduct.entries()].map(([code, p]) => ({
     code, product: p.name, category: p.category,
-    ton: p.buckets.ton, carton: p.buckets.carton, gross: p.buckets.gross,
+    monthly: trimMonths(p.months),
   }));
 
   const customerData = [...byCustomer.entries()].map(([key, c]) => ({
     partner: c.partner, channel: c.channel,
-    ton: c.buckets.ton, carton: c.buckets.carton, gross: c.buckets.gross,
+    monthly: trimMonths(c.months),
   }));
 
-  // Customer × Top Selling / Top Returned SKU (by Ton, DAX order applied per SKU).
-  const customerTopSku: Array<{ partner:string; top_selling:{product:string; ton:number}|null; top_returned:{product:string; ton:number}|null }> = [];
-  const partnerKeys = new Set<string>([
-    ...custSkuSales.keys(), ...custSkuReturns.keys(), ...cust26Sku.keys(),
-  ]);
-  for (const partner of partnerKeys) {
-    // Combine 2025 direct sales/returns with 2026 derived sales/returns per SKU.
-    const salesByProd = new Map<string, number>();
-    const retByProd   = new Map<string, number>();
-    const s25 = custSkuSales.get(partner);
-    if (s25) for (const [p, v] of s25) salesByProd.set(p, (salesByProd.get(p) ?? 0) + v);
-    const r25 = custSkuReturns.get(partner);
-    if (r25) for (const [p, v] of r25) retByProd.set(p, (retByProd.get(p) ?? 0) + v);
-    const m26 = cust26Sku.get(partner);
-    if (m26) for (const [p, c] of m26) {
-      const r26 = Math.abs(c.rinv - c.pr);
-      const s26 = c.sum - c.pr - r26;
-      salesByProd.set(p, (salesByProd.get(p) ?? 0) + s26);
-      retByProd.set(p,   (retByProd.get(p) ?? 0)   + r26);
-    }
-    let ts: {product:string; ton:number}|null = null;
-    for (const [prod, ton] of salesByProd) if (ton > 0 && (!ts || ton > ts.ton)) ts = { product: prod, ton };
-    let tr: {product:string; ton:number}|null = null;
-    for (const [prod, ton] of retByProd)   if (ton > 0 && (!tr || ton > tr.ton)) tr = { product: prod, ton };
-    customerTopSku.push({ partner, top_selling: ts, top_returned: tr });
+  // Customer × SKU per-month components → client derives per-period top SKU.
+  const customerSkuMonthly: Array<{
+    partner: string;
+    skus: Array<{ product: string; monthly: SkuComp[] }>;
+  }> = [];
+  for (const [partner, m] of custSkuMonth) {
+    const skus: Array<{ product: string; monthly: SkuComp[] }> = [];
+    for (const [product, arr] of m) skus.push({ product, monthly: arr });
+    customerSkuMonthly.push({ partner, skus });
   }
+
 
   // Channel YTD rollup
   const channelData: Array<{ channel:string; ton:Bucket; carton:Bucket; gross:Bucket }> = [];
