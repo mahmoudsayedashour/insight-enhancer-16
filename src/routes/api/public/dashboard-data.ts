@@ -353,22 +353,21 @@ async function buildPayload() {
       ensureCatMonth(cat)[month-1],
       ensureChannelMonth(channel)[month-1],
     ];
-    if (code) targets.push(ensureProduct(code, product, cat).buckets);
+    if (code) targets.push(ensureProduct(code, product, cat).months[month-1]);
     if (partnerRaw) {
-      targets.push(ensureCustomer(partnerRaw, partnerRaw, channel).buckets);
+      targets.push(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1]);
       customerSet26.add(partnerRaw);
       if (product) {
-        const m = cust26Sku.get(partnerRaw) ?? new Map<string, SkuComp26>();
-        const c = m.get(product) ?? { sum:0, pr:0, rinv:0 };
-        c.sum += ton;
-        if (isRINV) c.rinv += ton;
-        if (isPR)   c.pr   += Math.abs(ton);
-        m.set(product, c);
-        cust26Sku.set(partnerRaw, m);
+        const arr = ensureCustSku(partnerRaw, product);
+        const c = arr[month-1];
+        c.sum26 += ton;
+        if (isRINV) c.rinv26 += ton;
+        if (isPR)   c.pr26   += Math.abs(ton);
       }
     }
     for (const b of targets) add26Row(b, ton, carton, gross, isRINV, isPR);
   }
+
 
 
   // ── Populate Target buckets on all aggregations (per-month × unit) ──
