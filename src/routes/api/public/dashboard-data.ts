@@ -254,24 +254,31 @@ async function buildPayload() {
     const channel = String(r["channel"] ?? "").trim() || custChannel.get(partnerRaw) || "Other";
     const type = String(r["Type"] ?? "").trim();
 
-    // Actual 25 raw-column reality (verified against the workbook):
+    // Actual 25 raw-column reality (verified against workbook + Power BI PDF):
     //   `Sales -Ton` is essentially empty (37 non-zero rows out of 409k).
-    //   `Sales - Carton` and `Return - Ton2` / `Return - Carton` are populated.
-    //   The authoritative Ton value lives in the signed `Ton` column, split
-    //   by the `Type` column: 'Sales' | 'Return' | 'P.Return'. This matches
-    //   the Power-BI DAX (Jan–Jun 2025 → Sales ≈ 434 Ton, Return ≈ 50 Ton).
+    //   Authoritative Ton value lives in the signed `Ton` column, split by the
+    //   `Type` column: 'Sales' | 'Return' | 'P.Return'.
+    //   Power BI DAX (matches PDF for YTD/Q1/Q2/Jan/Feb/Mar exactly):
+    //     Sales 2025   = Σ(Ton where Type='Sales') − Σ|Ton where Type='P.Return'|
+    //     Returns 2025 = Σ|Ton where Type='Return'|
+    //   Partial Returns net against Sales, NOT against Returns — exactly the
+    //   same rule the 2026 sheet applies via `s26 = sum26 − pr26 − r26`.
     const tonRaw = num(r["Ton"]);
     const carRaw = num(r["Sales - Carton"]); // signed by type in the sheet
     const grossRaw = num(r["Amount"]);       // signed by type in the sheet
-    const isSalesRow  = type === "Sales";
-    const isReturnRow = type === "Return" || type === "P.Return";
+    const isSalesRow    = type === "Sales";
+    const isReturnRow   = type === "Return";
+    const isPartialRet  = type === "P.Return";
 
-    const sTon = isSalesRow ? tonRaw : 0;
-    const sCar = isSalesRow ? carRaw : 0;
-    const sGross = isSalesRow ? grossRaw : 0;
-    const rTonSrc = isReturnRow ? tonRaw : 0;
-    const rCarSrc = isReturnRow ? (num(r["Return - Carton"]) || carRaw) : 0;
+    // Sales = Sales rows minus |Partial Returns|.
+    const sTon   = isSalesRow ? tonRaw   : (isPartialRet ? -Math.abs(tonRaw)   : 0);
+    const sCar   = isSalesRow ? carRaw   : (isPartialRet ? -Math.abs(carRaw)   : 0);
+    const sGross = isSalesRow ? grossRaw : (isPartialRet ? -Math.abs(grossRaw) : 0);
+    // Returns = Return rows ONLY (P.Return excluded).
+    const rTonSrc   = isReturnRow ? tonRaw : 0;
+    const rCarSrc   = isReturnRow ? (num(r["Return - Carton"]) || carRaw) : 0;
     const rGrossSrc = isReturnRow ? grossRaw : 0;
+
 
     if (isSalesRow && (sTon || sCar || sGross)) {
       addSales(byMonth[month-1], 25, sTon, sCar, sGross);
