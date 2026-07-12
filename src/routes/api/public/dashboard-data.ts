@@ -280,7 +280,7 @@ async function buildPayload() {
     const rGrossSrc = isReturnRow ? grossRaw : 0;
 
 
-    if (isSalesRow && (sTon || sCar || sGross)) {
+    if ((isSalesRow || isPartialRet) && (sTon || sCar || sGross)) {
       addSales(byMonth[month-1], 25, sTon, sCar, sGross);
       addSales(ensureCatMonth(cat)[month-1], 25, sTon, sCar, sGross);
       addSales(ensureChannelMonth(channel)[month-1], 25, sTon, sCar, sGross);
