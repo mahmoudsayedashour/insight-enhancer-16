@@ -553,7 +553,7 @@ function pgChannel(D){
 // CUSTOMERS
 // ═══════════════════════════════════════════════════════════════
 function pgCustomers(D){
-  let cs = [...D.customer_data].filter(c=>c[curM].s26>0 && c.in_25).sort((a,b)=>b[curM].s26-a[curM].s26);
+  let cs = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26);
   const gold = cs.slice(0,10);
   const silver = cs.slice(10, Math.floor(10 + cs.length*0.3));
   const bronze = cs.slice(10 + silver.length);
@@ -562,10 +562,8 @@ function pgCustomers(D){
   const segMap = { gold, silver, bronze, lost };
   const seg = segMap[custSegment] || gold;
 
-  // Top-returned/top-selling SKU per customer (best-effort proxy: uses top product in same period)
-  // Since dataset has no customer×SKU breakdown, we surface the overall top-selling and top-returned SKU as reference.
-  const topSellingSKU = [...D.product_data].sort((a,b)=>b[curM].s26-a[curM].s26)[0];
-  const topReturnedSKU = [...D.product_data].sort((a,b)=>b[curM].r26-a[curM].r26)[0];
+  // Per-customer top-selling / top-returned SKU (from customer×SKU × active-period aggregation).
+  const skuMap = new Map((D.customer_top_sku||[]).map(x=>[x.partner, x]));
 
   const top20 = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26).slice(0,20);
 
@@ -580,7 +578,7 @@ function pgCustomers(D){
   document.getElementById('page-customers').innerHTML=`
     ${filteredNote(monthLabel(D))}
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-      ${kpi('🥇','Gold (Top 10)','10',null,'gold','Best returning customers',{click:'gold',selected:custSegment==='gold'})}
+      ${kpi('🥇','Gold (Top 10)',gold.length.toString(),null,'gold','Best returning customers',{click:'gold',selected:custSegment==='gold'})}
       ${kpi('🥈','Silver',silver.length.toString(),null,'cyan','Next 30%',{click:'silver',selected:custSegment==='silver'})}
       ${kpi('🥉','Bronze',bronze.length.toString(),null,'blue','Remaining returning',{click:'bronze',selected:custSegment==='bronze'})}
       ${kpi('❌','Lost Customers',lost.length.toString(),null,'red','Purchased 25, zero 26',{click:'lost',selected:custSegment==='lost'})}
@@ -598,21 +596,26 @@ function pgCustomers(D){
     </div>
 
     <div class="chart-card" style="margin-top:20px">
-      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top selling & top returned SKU shown as overall dataset reference (customer×SKU detail not in dataset)</div></div>
+      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top-selling & top-returned SKU per customer (Ton, active period)</div></div>
       <div class="data-table-wrapper" style="max-height:520px;overflow:auto">
         <table class="data-table">
           <thead><tr><th>#</th><th>Customer Name</th><th class="num">Sales Ton</th><th>Top Selling SKU (Ton)</th><th>Top Returned SKU (Ton)</th></tr></thead>
-          <tbody>${top20.map((c,i)=>`<tr>
-            <td>${i+1}</td>
-            <td>${c.customer}</td>
-            <td class="num">${fmt(c[curM].s26)}</td>
-            <td>${topSellingSKU?topSellingSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topSellingSKU?fmt(topSellingSKU[curM].s26):'–'})</span></td>
-            <td>${topReturnedSKU?topReturnedSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topReturnedSKU?fmt(topReturnedSKU[curM].r26):'–'})</span></td>
-          </tr>`).join('')}</tbody>
+          <tbody>${top20.map((c,i)=>{
+            const sk = skuMap.get(c.partner);
+            const ts = sk && sk.top_selling, tr = sk && sk.top_returned;
+            return `<tr>
+              <td>${i+1}</td>
+              <td>${c.customer}</td>
+              <td class="num">${fmt(c[curM].s26)}</td>
+              <td>${ts?ts.product:'–'} <span style="color:${C.gray};font-size:11px">${ts?`(${fmt(ts.ton)})`:''}</span></td>
+              <td>${tr?tr.product:'–'} <span style="color:${C.gray};font-size:11px">${tr?`(${fmt(tr.ton)})`:''}</span></td>
+            </tr>`;
+          }).join('')}</tbody>
         </table>
       </div>
     </div>
   `;
+
 
   // Wire clickable KPIs
   document.querySelectorAll('[data-kpi]').forEach(el=>{
