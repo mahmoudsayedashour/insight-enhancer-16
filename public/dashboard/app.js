@@ -93,25 +93,108 @@ function ach(v, t){ return t>0 ? (v/t*100) : 0; }
 function retP(s, r){ return (s+r)>0 ? (r/(s+r)*100) : 0; }
 function getSortHTML(label, field, cls=''){ return `<th data-sort="${field}"${cls?` class="${cls}"`:''}>${label}</th>`; }
 
-// Month filter helpers ------------------------------------------------
-// When curMonth==='ytd' we use meta totals (all YTD months).
-// When a specific month is selected we compute from monthly_data.
-function metaForCurrent(D){
-  if(curMonth==='ytd') return D.meta[curM];
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
-  if(!m) return D.meta[curM];
-  return { s25:m[curM].s25, s26:m[curM].s26, r25:m[curM].r25, r26:m[curM].r26, tgt25:m[curM].tgt25||0, tgt26:m[curM].tgt26 };
+// ── Global period filter helpers ────────────────────────────────
+// Every page reads a filtered D built by filterDataset(D). The active period
+// is a single source of truth: YTD (Jan..ytd_range), Q1, Q2, or one month.
+const PERIOD_LABELS = { ytd:'YTD', q1:'Q1 (Jan-Mar)', q2:'Q2 (Apr-Jun)' };
+function activeMonths(D){
+  const R = D?.meta?.ytd_range || 6;
+  if(curMonth === 'ytd') return Array.from({length:R}, (_,i)=>i+1);
+  if(curMonth === 'q1')  return [1,2,3];
+  if(curMonth === 'q2')  return [4,5,6];
+  const m = +curMonth;
+  return Number.isFinite(m) ? [m] : Array.from({length:R}, (_,i)=>i+1);
 }
-function monthLabel(D){
+// Sum linear components across months, then derive s26/r26 per DAX.
+const COMP_KEYS = ['s25','r25','tgt25','tgt26','sum26','pr26','rinv26'];
+const UNITS = ['ton','carton','gross'];
+function _emptyBucket(){ return { s25:0,s26:0,r25:0,r26:0,tgt25:0,tgt26:0,sum26:0,pr26:0,rinv26:0 }; }
+function _emptyUnits(){ return { ton:_emptyBucket(), carton:_emptyBucket(), gross:_emptyBucket() }; }
+function _derive26(u){
+  for(const un of UNITS){
+    const b = u[un];
+    b.r26 = Math.abs(b.rinv26 - b.pr26);
+    b.s26 = b.sum26 - b.pr26 - b.r26;
+  }
+}
+// monthly can be [{ton,carton,gross}, ...] or undefined; months are 1-indexed.
+function sumMonthly(monthly, months){
+  const out = _emptyUnits();
+  if(!Array.isArray(monthly)) return out;
+  for(const m of months){
+    const src = monthly[m-1];
+    if(!src) continue;
+    for(const un of UNITS){
+      const s = src[un]; if(!s) continue;
+      for(const k of COMP_KEYS) out[un][k] += (s[k] || 0);
+    }
+  }
+  _derive26(out);
+  return out;
+}
+// Build a shallow-cloned dataset with every axis re-aggregated for the active
+// period. Downstream renderers still access .ton / .carton / .gross exactly as
+// before — they just receive filtered numbers.
+function filterDataset(D){
+  const months = activeMonths(D);
+  const monthSet = new Set(months);
+  const attach = row => {
+    const u = sumMonthly(row.monthly, months);
+    return { ...row, ...u };
+  };
+  const meta = sumMonthly(D.monthly_data.map(m=>({ton:m.ton,carton:m.carton,gross:m.gross})), months);
+  // Derive customer × top-selling / top-returned SKU for the active period.
+  const customerTopSku = (D.customer_sku_monthly||[]).map(({partner, skus})=>{
+    let ts=null, tr=null;
+    for(const {product, monthly} of skus){
+      let s25=0,r25=0,sum26=0,pr26=0,rinv26=0;
+      for(const mi of months){ const c=monthly[mi-1]; if(!c) continue;
+        s25+=c.s25; r25+=c.r25; sum26+=c.sum26; pr26+=c.pr26; rinv26+=c.rinv26; }
+      const r26 = Math.abs(rinv26 - pr26);
+      const s26 = sum26 - pr26 - r26;
+      const salesTon = s25 + s26;
+      const retTon   = r25 + r26;
+      if(salesTon>0 && (!ts || salesTon>ts.ton)) ts = { product, ton: salesTon };
+      if(retTon>0   && (!tr || retTon>tr.ton))   tr = { product, ton: retTon };
+    }
+    return { partner, top_selling: ts, top_returned: tr };
+  });
+  return {
+    ...D,
+    _activeMonths: months,
+    meta: { ...D.meta, ton: meta.ton, carton: meta.carton, gross: meta.gross,
+      period_label: periodLabelFor(D, months) },
+    monthly_data: D.monthly_data.map(m=>({ ...m, in_ytd: monthSet.has(m.month_id) })),
+    category_data: (D.category_data||[]).map(attach)
+      .filter(c=>c.ton.s25||c.ton.s26||c.ton.r25||c.ton.r26)
+      .sort((a,b)=>(b.ton.s26+b.ton.s25)-(a.ton.s26+a.ton.s25)),
+    channel_data:  (D.channel_data ||[]).map(attach)
+      .filter(c=>c.ton.s25||c.ton.s26||c.ton.r25||c.ton.r26)
+      .sort((a,b)=>b.ton.s26-a.ton.s26),
+    product_data:  (D.product_data ||[]).map(attach),
+    customer_data: (D.customer_data||[]).map(c=>{
+      const u = sumMonthly(c.monthly, months);
+      return { partner: c.partner, customer: c.partner, channel: c.channel,
+        ton:u.ton, carton:u.carton, gross:u.gross };
+    }),
+    customer_top_sku: customerTopSku,
+  };
+}
+function periodLabelFor(D, months){
   if(curMonth==='ytd') return D.meta.ytd_label;
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
+  if(curMonth==='q1')  return 'Q1 2026 vs Q1 2025 (Jan-Mar)';
+  if(curMonth==='q2')  return 'Q2 2026 vs Q2 2025 (Apr-Jun)';
+  const m = D.monthly_data.find(x=>x.month_id===months[0]);
   return m ? `${m.month_name} 2026 vs ${m.month_name} 2025` : D.meta.ytd_label;
 }
-function isMonthFiltered(){ return curMonth!=='ytd'; }
+function metaForCurrent(D){ return D.meta[curM]; }
+function monthLabel(D){ return D.meta.period_label || D.meta.ytd_label; }
+function isMonthFiltered(){ return curMonth !== 'ytd'; }
 function filteredNote(text){
   if(!isMonthFiltered()) return '';
-  return `<div class="filter-note">📅 Month filter active (${text}). Product/customer aggregates use YTD totals unless month-level data exists.</div>`;
+  return `<div class="filter-note">📅 Page filter: <strong>${text}</strong> — every KPI, chart, table and ranking below reflects this period.</div>`;
 }
+
 
 // ── Page Routing ─────────────────────────────────────────────────
 const PAGE_TITLES = {
@@ -132,12 +215,14 @@ function go(page){
 }
 
 function renderPage(){
-  const D = window.GREKO_DATA;
-  if(!D) return;
+  const RAW = window.GREKO_DATA;
+  if(!RAW) return;
+  const D = filterDataset(RAW);
   ({home:pgHome, ytd:pgYTD, channel:pgChannel, customers:pgCustomers,
     returns:pgReturns, growth:pgGrowth, monthly:pgMonthly,
     quarterly:pgQuarterly}[currentPage]||(()=>{}))(D);
   // Merged view: render Year-Comparison content beneath the Executive dashboard on Home.
+
   if(currentPage === 'home' && typeof pgComparison === 'function'){
     pgComparison(D);
     const src = document.getElementById('page-comparison');
@@ -468,7 +553,7 @@ function pgChannel(D){
 // CUSTOMERS
 // ═══════════════════════════════════════════════════════════════
 function pgCustomers(D){
-  let cs = [...D.customer_data].filter(c=>c[curM].s26>0 && c.in_25).sort((a,b)=>b[curM].s26-a[curM].s26);
+  let cs = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26);
   const gold = cs.slice(0,10);
   const silver = cs.slice(10, Math.floor(10 + cs.length*0.3));
   const bronze = cs.slice(10 + silver.length);
@@ -477,10 +562,8 @@ function pgCustomers(D){
   const segMap = { gold, silver, bronze, lost };
   const seg = segMap[custSegment] || gold;
 
-  // Top-returned/top-selling SKU per customer (best-effort proxy: uses top product in same period)
-  // Since dataset has no customer×SKU breakdown, we surface the overall top-selling and top-returned SKU as reference.
-  const topSellingSKU = [...D.product_data].sort((a,b)=>b[curM].s26-a[curM].s26)[0];
-  const topReturnedSKU = [...D.product_data].sort((a,b)=>b[curM].r26-a[curM].r26)[0];
+  // Per-customer top-selling / top-returned SKU (from customer×SKU × active-period aggregation).
+  const skuMap = new Map((D.customer_top_sku||[]).map(x=>[x.partner, x]));
 
   const top20 = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26).slice(0,20);
 
@@ -495,7 +578,7 @@ function pgCustomers(D){
   document.getElementById('page-customers').innerHTML=`
     ${filteredNote(monthLabel(D))}
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-      ${kpi('🥇','Gold (Top 10)','10',null,'gold','Best returning customers',{click:'gold',selected:custSegment==='gold'})}
+      ${kpi('🥇','Gold (Top 10)',gold.length.toString(),null,'gold','Best returning customers',{click:'gold',selected:custSegment==='gold'})}
       ${kpi('🥈','Silver',silver.length.toString(),null,'cyan','Next 30%',{click:'silver',selected:custSegment==='silver'})}
       ${kpi('🥉','Bronze',bronze.length.toString(),null,'blue','Remaining returning',{click:'bronze',selected:custSegment==='bronze'})}
       ${kpi('❌','Lost Customers',lost.length.toString(),null,'red','Purchased 25, zero 26',{click:'lost',selected:custSegment==='lost'})}
@@ -513,21 +596,26 @@ function pgCustomers(D){
     </div>
 
     <div class="chart-card" style="margin-top:20px">
-      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top selling & top returned SKU shown as overall dataset reference (customer×SKU detail not in dataset)</div></div>
+      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top-selling & top-returned SKU per customer (Ton, active period)</div></div>
       <div class="data-table-wrapper" style="max-height:520px;overflow:auto">
         <table class="data-table">
           <thead><tr><th>#</th><th>Customer Name</th><th class="num">Sales Ton</th><th>Top Selling SKU (Ton)</th><th>Top Returned SKU (Ton)</th></tr></thead>
-          <tbody>${top20.map((c,i)=>`<tr>
-            <td>${i+1}</td>
-            <td>${c.customer}</td>
-            <td class="num">${fmt(c[curM].s26)}</td>
-            <td>${topSellingSKU?topSellingSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topSellingSKU?fmt(topSellingSKU[curM].s26):'–'})</span></td>
-            <td>${topReturnedSKU?topReturnedSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topReturnedSKU?fmt(topReturnedSKU[curM].r26):'–'})</span></td>
-          </tr>`).join('')}</tbody>
+          <tbody>${top20.map((c,i)=>{
+            const sk = skuMap.get(c.partner);
+            const ts = sk && sk.top_selling, tr = sk && sk.top_returned;
+            return `<tr>
+              <td>${i+1}</td>
+              <td>${c.customer}</td>
+              <td class="num">${fmt(c[curM].s26)}</td>
+              <td>${ts?ts.product:'–'} <span style="color:${C.gray};font-size:11px">${ts?`(${fmt(ts.ton)})`:''}</span></td>
+              <td>${tr?tr.product:'–'} <span style="color:${C.gray};font-size:11px">${tr?`(${fmt(tr.ton)})`:''}</span></td>
+            </tr>`;
+          }).join('')}</tbody>
         </table>
       </div>
     </div>
   `;
+
 
   // Wire clickable KPIs
   document.querySelectorAll('[data-kpi]').forEach(el=>{
@@ -609,7 +697,8 @@ function pgGrowth(D){
 // ═══════════════════════════════════════════════════════════════
 function pgMonthly(D){
   let md = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  if(isMonthFiltered()) md = md.filter(m=>m.month_id===+curMonth);
+  md = md.filter(m=>m.in_ytd); // in_ytd now = active period (YTD/Q1/Q2/single month)
+
   document.getElementById('page-monthly').innerHTML=`
     ${filteredNote(monthLabel(D))}
     <div class="chart-grid cols-1">
@@ -662,10 +751,17 @@ function pgQuarterly(D){
     <div id="q-content"></div>
   `;
   document.querySelectorAll('.q-btn').forEach(btn=>{
-    btn.addEventListener('click',e=>{ qFilter=e.target.dataset.q; renderPage(); });
+    btn.addEventListener('click',e=>{
+      qFilter = e.target.dataset.q;
+      // Sync with the global page filter so the whole app reflects Q1/Q2/YTD.
+      curMonth = qFilter;
+      const sel = document.getElementById('month-filter'); if(sel) sel.value = curMonth;
+      renderPage();
+    });
   });
   const mds=[...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  const fil = qFilter==='q1' ? mds.slice(0,3) : qFilter==='q2' ? mds.slice(3,6) : mds.filter(m=>m.in_ytd);
+  const fil = mds.filter(m=>m.in_ytd);
+
   let s25=0,s26=0,t26=0,r25=0,r26=0;
   fil.forEach(m=>{s25+=m[curM].s25;s26+=m[curM].s26;t26+=m[curM].tgt26;r25+=m[curM].r25;r26+=m[curM].r26;});
   const g=grow(s26,s25), a=ach(s26,t26);
@@ -790,11 +886,16 @@ function buildMonthFilter(D){
   const sel = document.getElementById('month-filter');
   if(!sel) return;
   const months = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  sel.innerHTML = `<option value="ytd">YTD (Auto — All 2026 Months)</option>` +
-    months.map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
+  sel.innerHTML =
+    `<option value="ytd">YTD (Jan–Jun)</option>` +
+    `<option value="q1">Q1 (Jan–Mar)</option>` +
+    `<option value="q2">Q2 (Apr–Jun)</option>` +
+    `<option disabled>──────────</option>` +
+    months.slice(0,6).map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
   sel.value = curMonth;
   sel.addEventListener('change', e=>{ curMonth = e.target.value; renderPage(); });
 }
+
 
 function init(){
   const D=window.GREKO_DATA;
