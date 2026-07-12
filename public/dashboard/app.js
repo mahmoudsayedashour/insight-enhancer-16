@@ -875,11 +875,16 @@ function buildMonthFilter(D){
   const sel = document.getElementById('month-filter');
   if(!sel) return;
   const months = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  sel.innerHTML = `<option value="ytd">YTD (Auto — All 2026 Months)</option>` +
-    months.map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
+  sel.innerHTML =
+    `<option value="ytd">YTD (Jan–Jun)</option>` +
+    `<option value="q1">Q1 (Jan–Mar)</option>` +
+    `<option value="q2">Q2 (Apr–Jun)</option>` +
+    `<option disabled>──────────</option>` +
+    months.slice(0,6).map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
   sel.value = curMonth;
   sel.addEventListener('change', e=>{ curMonth = e.target.value; renderPage(); });
 }
+
 
 function init(){
   const D=window.GREKO_DATA;
