@@ -519,7 +519,7 @@ async function buildPayload() {
     category_data: categoryData,
     monthly_data: monthlyData,
     channel_data: channelData,
-    customer_top_sku: customerTopSku,
+    customer_sku_monthly: customerSkuMonthly,
   };
   payload.meta.build_ms = Date.now() - t0;
   return payload;
