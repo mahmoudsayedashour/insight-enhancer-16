@@ -215,12 +215,14 @@ function go(page){
 }
 
 function renderPage(){
-  const D = window.GREKO_DATA;
-  if(!D) return;
+  const RAW = window.GREKO_DATA;
+  if(!RAW) return;
+  const D = filterDataset(RAW);
   ({home:pgHome, ytd:pgYTD, channel:pgChannel, customers:pgCustomers,
     returns:pgReturns, growth:pgGrowth, monthly:pgMonthly,
     quarterly:pgQuarterly}[currentPage]||(()=>{}))(D);
   // Merged view: render Year-Comparison content beneath the Executive dashboard on Home.
+
   if(currentPage === 'home' && typeof pgComparison === 'function'){
     pgComparison(D);
     const src = document.getElementById('page-comparison');
