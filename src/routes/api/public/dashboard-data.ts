@@ -1,14 +1,22 @@
 /**
  * Live dashboard data pipeline — fetches the Greko workbook from Vercel Blob,
- * parses it with SheetJS on the server, applies the Power-BI DAX business
- * rules, and returns a compact JSON payload the browser dashboard renders.
+ * parses it with SheetJS on the server, applies the SHARED Power-BI DAX
+ * business rules identically to Actual 25 and Actual 2026, and returns a
+ * compact JSON payload the browser dashboard renders.
  *
  *   Workbook (single source of truth) →  fetch  →  SheetJS parse
- *     →  DAX aggregation (Sales, Returns, Targets, per period/category/channel/customer)
+ *     →  ONE shared aggregation pipeline (both years, identical logic)
  *     →  60-second in-memory cache  →  JSON response
  *
- * Replacing the .xlsx in Vercel Blob automatically flows through — no code
- * change, no manual export.
+ * Business rules (applied identically to Ton / Carton / Gross for BOTH years):
+ *   Partial Returns  = Σ |value|   where LEFT(UPPER(Invoice lines/Reference),1) = "R"
+ *   RINV total       = Σ  value    where Invoice lines/Number Type = "RINV"
+ *   Total            = Σ  value    over all rows
+ *   Returns          = | RINV total − Partial Returns |
+ *   Sales            = Total − Partial Returns − Returns
+ *
+ * Filtering: Delivery Date determines month + year (25 vs 26). No year-specific
+ * code paths. No manual adjustments. Vercel Blob workbook = only source.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import * as XLSX from "xlsx";
@@ -19,7 +27,6 @@ const WORKBOOK_URL =
 const CACHE_TTL_MS = 60_000;
 let cache: { at: number; payload: unknown } | null = null;
 
-// Arabic → month index (1..12) used by both Forecast sheets.
 const AR_MONTHS: Record<string, number> = {
   "يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "مايو": 5, "يونيو": 6,
   "يوليو": 7, "أغسطس": 8, "سبتمبر": 9, "أكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12,
@@ -29,36 +36,35 @@ const MONTH_NAMES = ["January","February","March","April","May","June",
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 type Unit = "ton" | "carton" | "gross";
-// Power-BI DAX calc order for 2026 (Sales table):
-//   pr26  = Σ |v| where LEFT(UPPER(Invoice lines/Reference),1) = "R"   (Partial Returns)
-//   rinv26 = Σ v where Invoice lines/Number Type = "RINV"              (signed)
-//   sum26  = Σ v over all rows                                          (signed)
-//   r26    = | rinv26 - pr26 |
-//   s26    = sum26 - pr26 - r26
-// s26/r26 are derived after aggregation — NEVER accumulated directly.
+// Raw components stored per year; s/r are DERIVED after aggregation.
 type Bucket = {
-  s25:number; s26:number; r25:number; r26:number; tgt25:number; tgt26:number;
+  s25:number; s26:number; r25:number; r26:number;
+  tgt25:number; tgt26:number;
+  sum25:number; pr25:number; rinv25:number;
   sum26:number; pr26:number; rinv26:number;
 };
 type UnitBuckets = Record<Unit, Bucket>;
 
-const emptyBucket = (): Bucket => ({ s25:0, s26:0, r25:0, r26:0, tgt25:0, tgt26:0, sum26:0, pr26:0, rinv26:0 });
-const emptyUnits  = (): UnitBuckets => ({ ton:emptyBucket(), carton:emptyBucket(), gross:emptyBucket() });
+const emptyBucket = (): Bucket => ({
+  s25:0, s26:0, r25:0, r26:0, tgt25:0, tgt26:0,
+  sum25:0, pr25:0, rinv25:0, sum26:0, pr26:0, rinv26:0,
+});
+const emptyUnits = (): UnitBuckets => ({ ton:emptyBucket(), carton:emptyBucket(), gross:emptyBucket() });
 
-// Derive s26/r26 from raw component sums per the DAX order above.
-function derive26(b: UnitBuckets) {
+// Derive s25/r25 and s26/r26 from raw components per the shared DAX order.
+function deriveAll(b: UnitBuckets) {
   (["ton","carton","gross"] as Unit[]).forEach(u => {
     const x = b[u];
+    x.r25 = Math.abs(x.rinv25 - x.pr25);
+    x.s25 = x.sum25 - x.pr25 - x.r25;
     x.r26 = Math.abs(x.rinv26 - x.pr26);
     x.s26 = x.sum26 - x.pr26 - x.r26;
   });
 }
 
-// Robust date-parser — Actual 25 uses Excel serial numbers; Actual 2026 sometimes
-// has a full text "Wednesday, June 24, 2026" in Delivery Date instead of Date.
+// Date coercion — Excel serial or textual date string.
 function excelSerialToDate(n: number): Date | null {
   if (!Number.isFinite(n) || n <= 0) return null;
-  // Excel's day 1 is 1900-01-01, with a fake leap-day. Standard offset: 25569.
   return new Date(Math.round((n - 25569) * 86400_000));
 }
 function coerceDate(v: unknown): Date | null {
@@ -80,42 +86,36 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Aggregate helpers -----------------------------------------------------------
-function addSales(b: UnitBuckets, year: 25, ton: number, carton: number, gross: number) {
-  b.ton.s25    += ton;
-  b.carton.s25 += carton;
-  b.gross.s25  += gross;
-}
-function addReturn(b: UnitBuckets, year: 25, ton: number, carton: number, gross: number) {
-  b.ton.r25    += Math.abs(ton);
-  b.carton.r25 += Math.abs(carton);
-  b.gross.r25  += Math.abs(gross);
-}
-// 2026 raw-component adder — feeds sum26/pr26/rinv26; s26/r26 derived later.
-function add26Row(
+// Add a raw-component contribution to a UnitBuckets slot (year-scoped).
+function addRow(
   b: UnitBuckets,
+  year: 25 | 26,
   ton: number, carton: number, gross: number,
   isRINV: boolean, isPartialReturn: boolean,
 ) {
-  b.ton.sum26    += ton;    b.carton.sum26 += carton; b.gross.sum26  += gross;
+  const sumK  = year === 25 ? "sum25"  : "sum26";
+  const prK   = year === 25 ? "pr25"   : "pr26";
+  const rinvK = year === 25 ? "rinv25" : "rinv26";
+  b.ton[sumK]    += ton;
+  b.carton[sumK] += carton;
+  b.gross[sumK]  += gross;
   if (isRINV) {
-    b.ton.rinv26 += ton;    b.carton.rinv26 += carton; b.gross.rinv26 += gross;
+    b.ton[rinvK]    += ton;
+    b.carton[rinvK] += carton;
+    b.gross[rinvK]  += gross;
   }
   if (isPartialReturn) {
-    b.ton.pr26    += Math.abs(ton);
-    b.carton.pr26 += Math.abs(carton);
-    b.gross.pr26  += Math.abs(gross);
+    b.ton[prK]    += Math.abs(ton);
+    b.carton[prK] += Math.abs(carton);
+    b.gross[prK]  += Math.abs(gross);
   }
 }
 function addTarget(b: UnitBuckets, year: 25 | 26, ton: number, carton: number) {
   const k = year === 25 ? "tgt25" : "tgt26";
   b.ton[k]    += ton;
   b.carton[k] += carton;
-  // Gross target is not defined in the workbook.
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Core aggregation
 // ────────────────────────────────────────────────────────────────────────────
 async function buildPayload() {
   const t0 = Date.now();
@@ -123,10 +123,7 @@ async function buildPayload() {
   if (!res.ok) throw new Error(`Workbook fetch failed: ${res.status}`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: false });
-  console.log("[dashboard-data] SheetNames:", JSON.stringify(wb.SheetNames), "Sheets keys:", JSON.stringify(Object.keys(wb.Sheets)));
 
-  // Robust lookup: SheetNames array is authoritative; some SheetJS builds keep
-  // Sheets as a Proxy where keys(...) doesn't enumerate. Match by trimmed name.
   const sheetIndex: Record<string, XLSX.WorkSheet> = {};
   for (const nm of wb.SheetNames) {
     const ws = wb.Sheets[nm];
@@ -136,11 +133,7 @@ async function buildPayload() {
   const sheet = (name: string) => {
     const ws = sheetIndex[name.trim()];
     if (!ws) {
-      // Preview (Cloudflare Worker, ~128 MB) can silently drop the largest
-      // sheet during SheetJS parse — it appears in SheetNames but Sheets[nm]
-      // is undefined. On Vercel (Node runtime, ~1 GB) all sheets parse fine.
-      // Rather than 500 in preview, treat as empty and continue.
-      console.warn(`[dashboard-data] Sheet "${name}" not materialised (likely preview memory limit). Treating as empty.`);
+      console.warn(`[dashboard-data] Sheet "${name}" not materialised. Treating as empty.`);
       missingSheets.push(name);
       return [] as Record<string, unknown>[];
     }
@@ -154,7 +147,7 @@ async function buildPayload() {
   const actual26   = sheet("Actual 2026");
   const customers  = sheet("Customers");
 
-  // Lookups: Code → Category / Product name / Weight
+  // Lookups
   const codeCategory = new Map<string, string>();
   const codeProduct  = new Map<string, string>();
   for (const r of mainData) {
@@ -163,7 +156,6 @@ async function buildPayload() {
     codeCategory.set(code, String(r["Product Category"] ?? "").trim() || "Uncategorized");
     codeProduct.set(code, String(r["Invoice lines/Product"] ?? "").trim());
   }
-  // Customer → channel fallback for 2026 rows without Channel
   const custChannel = new Map<string, string>();
   for (const r of customers) {
     const c = String(r["Customers"] ?? "").trim();
@@ -171,8 +163,7 @@ async function buildPayload() {
     if (c && ch) custChannel.set(c, ch);
   }
 
-  // ── Targets — Forecast 25 & 26 (Arabic month columns × Ton|Carton) ──
-  // Structure: totals[year][month] = {ton, carton}, plus by-category and by-code.
+  // Forecast targets
   const targetTotals: Record<25|26, Array<{ton:number; carton:number}>> = {
     25: Array.from({length:12}, ()=>({ton:0,carton:0})),
     26: Array.from({length:12}, ()=>({ton:0,carton:0})),
@@ -183,17 +174,17 @@ async function buildPayload() {
   const targetByCode: Record<25|26, Map<string, Array<{ton:number; carton:number}>>> = {
     25: new Map(), 26: new Map(),
   };
-
   function readForecast(rows: Record<string,unknown>[], year: 25|26) {
     if (rows.length === 0) return;
-    // Detect month columns: keys contain an Arabic month name + a "طن" (ton) or "كراتين"/"كرتون" (carton) marker.
     const cols = Object.keys(rows[0]);
     const monthCols: Array<{key:string; month:number; kind:"ton"|"carton"}> = [];
     for (const k of cols) {
       const parts = k.trim().split(/\s+/);
       const monthName = parts.find(p => AR_MONTHS[p] != null);
       if (!monthName) continue;
-      const kind: "ton"|"carton" = k.includes("طن") ? "ton" : (k.includes("كراتين") || k.includes("كرتون")) ? "carton" : (() => { throw new Error("unknown forecast unit: "+k); })();
+      const kind: "ton"|"carton" = k.includes("طن") ? "ton"
+        : (k.includes("كراتين") || k.includes("كرتون")) ? "carton"
+        : (() => { throw new Error("unknown forecast unit: "+k); })();
       monthCols.push({ key:k, month: AR_MONTHS[monthName], kind });
     }
     for (const r of rows) {
@@ -216,161 +207,92 @@ async function buildPayload() {
   readForecast(forecast25, 25);
   readForecast(forecast26, 26);
 
-  // ── Aggregation containers ── every axis stores per-month buckets so the
-  // client can filter globally by any period (YTD / Q1 / Q2 / single month).
+  // Aggregation containers
   const byMonth: Array<UnitBuckets> = Array.from({length:12}, emptyUnits);
   const byCategoryMonth = new Map<string, Array<UnitBuckets>>();
   const byChannelMonth  = new Map<string, Array<UnitBuckets>>();
   const byProduct  = new Map<string, { name:string; category:string; months: UnitBuckets[] }>();
   const byCustomer = new Map<string, { partner:string; channel:string; months: UnitBuckets[] }>();
-  // Customer × SKU per-month components (mirrors byProduct structure).
-  type SkuComp = { s25:number; r25:number; sum26:number; pr26:number; rinv26:number };
-  const emptySku = (): SkuComp => ({ s25:0, r25:0, sum26:0, pr26:0, rinv26:0 });
-  const custSkuMonth = new Map<string, Map<string, SkuComp[]>>(); // partner → product → [12]
+  // Customer × SKU per-month components (raw components — client derives).
+  type SkuComp = { sum25:number; pr25:number; rinv25:number; sum26:number; pr26:number; rinv26:number };
+  const emptySku = (): SkuComp => ({ sum25:0, pr25:0, rinv25:0, sum26:0, pr26:0, rinv26:0 });
+  const custSkuMonth = new Map<string, Map<string, SkuComp[]>>();
 
-  function ensureCatMonth(cat:string){ let a = byCategoryMonth.get(cat); if(!a){ a = Array.from({length:12}, emptyUnits); byCategoryMonth.set(cat, a);} return a; }
-  function ensureChannelMonth(ch:string){ let a = byChannelMonth.get(ch); if(!a){ a = Array.from({length:12}, emptyUnits); byChannelMonth.set(ch, a);} return a; }
-  function ensureProduct(code:string, name:string, cat:string){ let p = byProduct.get(code); if(!p){ p = { name, category: cat, months: Array.from({length:12}, emptyUnits) }; byProduct.set(code, p);} return p; }
-  function ensureCustomer(key:string, partner:string, channel:string){ let c = byCustomer.get(key); if(!c){ c = { partner, channel, months: Array.from({length:12}, emptyUnits) }; byCustomer.set(key, c);} return c; }
-  function ensureCustSku(partner:string, product:string): SkuComp[] {
+  const ensureCatMonth = (cat:string) => { let a = byCategoryMonth.get(cat); if(!a){ a = Array.from({length:12}, emptyUnits); byCategoryMonth.set(cat, a);} return a; };
+  const ensureChannelMonth = (ch:string) => { let a = byChannelMonth.get(ch); if(!a){ a = Array.from({length:12}, emptyUnits); byChannelMonth.set(ch, a);} return a; };
+  const ensureProduct = (code:string, name:string, cat:string) => { let p = byProduct.get(code); if(!p){ p = { name, category: cat, months: Array.from({length:12}, emptyUnits) }; byProduct.set(code, p);} return p; };
+  const ensureCustomer = (key:string, partner:string, channel:string) => { let c = byCustomer.get(key); if(!c){ c = { partner, channel, months: Array.from({length:12}, emptyUnits) }; byCustomer.set(key, c);} return c; };
+  const ensureCustSku = (partner:string, product:string): SkuComp[] => {
     let m = custSkuMonth.get(partner);
     if(!m){ m = new Map(); custSkuMonth.set(partner, m); }
     let arr = m.get(product);
     if(!arr){ arr = Array.from({length:12}, emptySku); m.set(product, arr); }
     return arr;
-  }
+  };
 
+  // ── SHARED processor — same code, same DAX, both sheets ─────────────────
+  const customerSet: Record<25|26, Set<string>> = { 25: new Set(), 26: new Set() };
+  const maxMonth: Record<25|26, number> = { 25: 0, 26: 0 };
+  const VALIDATION_CAP = 6; // Jan..Jun window
 
-  // ── Actual 25 — pre-calculated Sales/Return columns; filter by Delivery Date.
-  let max25 = 0;
-  const customerSet25 = new Set<string>();
-  for (const r of actual25) {
-    const d = coerceDate(r["Delivery Date"]) ?? coerceDate(r["Date"]);
-    const dMonth = monthOf(d);
-    const dYear  = yearOf(d);
-    // Prefer Delivery Date; fall back to Month ID only when the row has no date.
-    const month = (dYear === 2025 && dMonth) ? dMonth : num(r["Month ID"]);
-    if (!month || month < 1 || month > 12) continue;
-    if (dYear && dYear !== 2025) continue;
-    if (month > 6) continue; // validation window: Jan..Jun
-    if (month > max25) max25 = month;
-    const cat = String(r["Product Category"] ?? "").trim() || "Uncategorized";
-    const code = String(r["Code"] ?? "").trim();
-    const product = String(r["Invoice lines/Product"] ?? "").trim() || codeProduct.get(code) || code;
-    const partnerRaw = String(r["Partner"] ?? "").trim() || String(r["Invoice Partner Display Name"] ?? "").trim();
-    const channel = String(r["channel"] ?? "").trim() || custChannel.get(partnerRaw) || "Other";
-    const type = String(r["Type"] ?? "").trim();
+  function processSheet(rows: Record<string, unknown>[]) {
+    for (const r of rows) {
+      const d = coerceDate(r["Delivery Date"]);
+      const month = monthOf(d);
+      const year  = yearOf(d);
+      if (!month || (year !== 2025 && year !== 2026)) continue;
+      if (month > VALIDATION_CAP) continue;
+      const y: 25 | 26 = year === 2025 ? 25 : 26;
+      if (month > maxMonth[y]) maxMonth[y] = month;
 
-    // Actual 25 raw-column reality (verified against workbook + Power BI PDF):
-    //   `Sales -Ton` is essentially empty (37 non-zero rows out of 409k).
-    //   Authoritative Ton value lives in the signed `Ton` column, split by the
-    //   `Type` column: 'Sales' | 'Return' | 'P.Return'.
-    //   Power BI DAX (matches PDF for YTD/Q1/Q2/Jan/Feb/Mar exactly):
-    //     Sales 2025   = Σ(Ton where Type='Sales') − Σ|Ton where Type='P.Return'|
-    //     Returns 2025 = Σ|Ton where Type='Return'|
-    //   Partial Returns net against Sales, NOT against Returns — exactly the
-    //   same rule the 2026 sheet applies via `s26 = sum26 − pr26 − r26`.
-    const tonRaw = num(r["Ton"]);
-    const carRaw = num(r["Sales - Carton"]); // signed by type in the sheet
-    const grossRaw = num(r["Amount"]);       // signed by type in the sheet
-    const isSalesRow    = type === "Sales";
-    const isReturnRow   = type === "Return";
-    const isPartialRet  = type === "P.Return";
+      const numberType = String(r["Invoice lines/Number Type"] ?? "").trim().toUpperCase();
+      const reference  = String(r["Invoice lines/Reference"] ?? "").trim();
+      const isRINV = numberType === "RINV";
+      const isPR   = reference.length > 0 && reference[0].toUpperCase() === "R";
 
-    // Sales = Sales rows minus |Partial Returns|.
-    const sTon   = isSalesRow ? tonRaw   : (isPartialRet ? -Math.abs(tonRaw)   : 0);
-    const sCar   = isSalesRow ? carRaw   : (isPartialRet ? -Math.abs(carRaw)   : 0);
-    const sGross = isSalesRow ? grossRaw : (isPartialRet ? -Math.abs(grossRaw) : 0);
-    // Returns = Return rows ONLY (P.Return excluded).
-    const rTonSrc   = isReturnRow ? tonRaw : 0;
-    const rCarSrc   = isReturnRow ? (num(r["Return - Carton"]) || carRaw) : 0;
-    const rGrossSrc = isReturnRow ? grossRaw : 0;
+      const code = String(r["Code"] ?? "").trim();
+      const cat  = codeCategory.get(code) || String(r["Product Category"] ?? "").trim() || "Uncategorized";
+      const product = String(r["Invoice lines/Product"] ?? "").trim() || codeProduct.get(code) || code;
+      const partnerRaw = String(r["Invoice Partner Display Name"] ?? "").trim()
+        || String(r["Invoice lines/Partner"] ?? "").trim()
+        || String(r["Partner"] ?? "").trim();
+      const channel = String(r["Channel"] ?? "").trim()
+        || String(r["channel"] ?? "").trim()
+        || custChannel.get(partnerRaw) || "Other";
 
+      const ton    = num(r["Num Ton"]);
+      const carton = num(r["Num Carton"]);
+      const gross  = num(r["Invoice lines/Amount in Currency"]) || num(r["Amount"]);
+      if (!ton && !carton && !gross) continue;
 
-    if ((isSalesRow || isPartialRet) && (sTon || sCar || sGross)) {
-      addSales(byMonth[month-1], 25, sTon, sCar, sGross);
-      addSales(ensureCatMonth(cat)[month-1], 25, sTon, sCar, sGross);
-      addSales(ensureChannelMonth(channel)[month-1], 25, sTon, sCar, sGross);
-      if (code) addSales(ensureProduct(code, product, cat).months[month-1], 25, sTon, sCar, sGross);
+      const targets: UnitBuckets[] = [
+        byMonth[month-1],
+        ensureCatMonth(cat)[month-1],
+        ensureChannelMonth(channel)[month-1],
+      ];
+      if (code) targets.push(ensureProduct(code, product, cat).months[month-1]);
       if (partnerRaw) {
-        addSales(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1], 25, sTon, sCar, sGross);
-        if (product && sTon !== 0) {
+        targets.push(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1]);
+        customerSet[y].add(partnerRaw);
+        if (product) {
           const arr = ensureCustSku(partnerRaw, product);
-          arr[month-1].s25 += sTon;
+          const c = arr[month-1];
+          const sumK  = y === 25 ? "sum25"  : "sum26";
+          const prK   = y === 25 ? "pr25"   : "pr26";
+          const rinvK = y === 25 ? "rinv25" : "rinv26";
+          c[sumK] += ton;
+          if (isRINV) c[rinvK] += ton;
+          if (isPR)   c[prK]   += Math.abs(ton);
         }
       }
-      customerSet25.add(partnerRaw);
-    }
-    if (isReturnRow && (rTonSrc || rCarSrc || rGrossSrc)) {
-      addReturn(byMonth[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-      addReturn(ensureCatMonth(cat)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-      addReturn(ensureChannelMonth(channel)[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-      if (code) addReturn(ensureProduct(code, product, cat).months[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-      if (partnerRaw) {
-        addReturn(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1], 25, rTonSrc, rCarSrc, rGrossSrc);
-        if (product && Math.abs(rTonSrc) > 0) {
-          const arr = ensureCustSku(partnerRaw, product);
-          arr[month-1].r25 += Math.abs(rTonSrc);
-        }
-      }
+      for (const b of targets) addRow(b, y, ton, carton, gross, isRINV, isPR);
     }
   }
 
+  processSheet(actual25);
+  processSheet(actual26);
 
-  // ── Actual 2026 — Power BI DAX calc order (Sales table) ──
-  // Every row contributes to sum26 (Σ Num Ton). Rows where
-  // LEFT(UPPER(Invoice lines/Reference),1) = "R" are Partial Returns (pr26).
-  // Rows where Number Type = "RINV" contribute to rinv26. Sales/Returns are
-  // derived after aggregation. Filter: Delivery Date, year = 2026.
-  let max26 = 0;
-  const customerSet26 = new Set<string>();
-  for (const r of actual26) {
-    const d = coerceDate(r["Delivery Date"]) ?? coerceDate(r["Date"]);
-    const month = monthOf(d);
-    const year  = yearOf(d);
-    if (!month || year !== 2026) continue;
-    if (month > 6) continue; // validation window: Jan..Jun
-    if (month > max26) max26 = month;
-
-    const numberType = String(r["Invoice lines/Number Type"] ?? "").trim().toUpperCase();
-    const reference  = String(r["Invoice lines/Reference"] ?? "").trim();
-    const isRINV = numberType === "RINV";
-    const isPR   = reference.length > 0 && reference[0].toUpperCase() === "R";
-
-    const code = String(r["Code"] ?? "").trim();
-    const cat  = codeCategory.get(code) || "Uncategorized";
-    const product = String(r["Invoice lines/Product"] ?? "").trim() || codeProduct.get(code) || code;
-    const partnerRaw = String(r["Invoice Partner Display Name"] ?? "").trim() || String(r["Invoice lines/Partner"] ?? "").trim();
-    const channel = String(r["Channel"] ?? "").trim() || custChannel.get(partnerRaw) || "Other";
-
-    const ton   = num(r["Num Ton"]);
-    const carton= num(r["Num Carton"]);
-    const gross = num(r["Invoice lines/Amount in Currency"]);
-    if (!ton && !carton && !gross) continue;
-
-    const targets: UnitBuckets[] = [
-      byMonth[month-1],
-      ensureCatMonth(cat)[month-1],
-      ensureChannelMonth(channel)[month-1],
-    ];
-    if (code) targets.push(ensureProduct(code, product, cat).months[month-1]);
-    if (partnerRaw) {
-      targets.push(ensureCustomer(partnerRaw, partnerRaw, channel).months[month-1]);
-      customerSet26.add(partnerRaw);
-      if (product) {
-        const arr = ensureCustSku(partnerRaw, product);
-        const c = arr[month-1];
-        c.sum26 += ton;
-        if (isRINV) c.rinv26 += ton;
-        if (isPR)   c.pr26   += Math.abs(ton);
-      }
-    }
-    for (const b of targets) add26Row(b, ton, carton, gross, isRINV, isPR);
-  }
-
-
-
-  // ── Populate Target buckets on all aggregations (per-month × unit) ──
+  // Populate targets on all aggregations
   for (let mi = 0; mi < 12; mi++) {
     addTarget(byMonth[mi], 25, targetTotals[25][mi].ton, targetTotals[25][mi].carton);
     addTarget(byMonth[mi], 26, targetTotals[26][mi].ton, targetTotals[26][mi].carton);
@@ -392,17 +314,16 @@ async function buildPayload() {
     }
   }
 
-
-  // ── Equivalent-period aggregation ──
-  // Validation window: Jan..Jun in BOTH years (per Power BI PDF reference).
-  // Cap by whatever the latest actual month is in 2026 (in case only Jan..May exists).
-  const maxMonth26 = max26 || 12;
-  const maxMonth25 = max25 || 12;
-  const VALIDATION_CAP = 6; // June
+  // ── Period aggregation (YTD Jan..Jun cap) ──
+  const maxMonth26 = maxMonth[26] || 12;
+  const maxMonth25 = maxMonth[25] || 12;
   const ytdRange = Math.min(maxMonth26 || VALIDATION_CAP, VALIDATION_CAP);
 
-  // Sum linear component fields across months, then derive s26/r26 per DAX.
-  const COMP_KEYS: Array<keyof Bucket> = ["s25","r25","tgt25","tgt26","sum26","pr26","rinv26"];
+  const COMP_KEYS: Array<keyof Bucket> = [
+    "tgt25","tgt26",
+    "sum25","pr25","rinv25",
+    "sum26","pr26","rinv26",
+  ];
   const sumRange = (arr: UnitBuckets[], months: number[]): UnitBuckets => {
     const out = emptyUnits();
     for (const m of months) {
@@ -411,14 +332,25 @@ async function buildPayload() {
         for (const k of COMP_KEYS) out[u][k] += src[u][k];
       });
     }
-    derive26(out);
+    deriveAll(out);
     return out;
   };
 
   const ytdMonths = Array.from({length: ytdRange}, (_, i)=> i+1);
   const totalsYTD = sumRange(byMonth, ytdMonths);
 
-  // Category — emit YTD summary + per-month buckets (Jan..Jun).
+  // Per-month bucket serializer: derive s/r from components then emit.
+  const trimMonths = (arr: UnitBuckets[]) =>
+    arr.slice(0, 12).map(m => {
+      const c = emptyUnits();
+      (["ton","carton","gross"] as Unit[]).forEach(un => {
+        for (const k of COMP_KEYS) c[un][k] = m[un][k];
+      });
+      deriveAll(c);
+      return { ton: c.ton, carton: c.carton, gross: c.gross };
+    });
+
+  // Category
   const categoryData: Array<{
     category:string; ton:Bucket; carton:Bucket; gross:Bucket;
     monthly: Array<{ton:Bucket; carton:Bucket; gross:Bucket}>;
@@ -426,35 +358,21 @@ async function buildPayload() {
   for (const [cat, arr] of byCategoryMonth) {
     const u = sumRange(arr, ytdMonths);
     if (!(u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)) continue;
-    // Per-month buckets with derived s26/r26.
-    const monthly = arr.slice(0, 12).map(m => {
-      const c = emptyUnits();
-      (["ton","carton","gross"] as Unit[]).forEach(un => {
-        for (const k of COMP_KEYS) c[un][k] = m[un][k];
-      });
-      derive26(c);
-      return { ton: c.ton, carton: c.carton, gross: c.gross };
-    });
-    categoryData.push({ category: cat, ton: u.ton, carton: u.carton, gross: u.gross, monthly });
+    categoryData.push({ category: cat, ton: u.ton, carton: u.carton, gross: u.gross, monthly: trimMonths(arr) });
   }
   categoryData.sort((a,b) => (b.ton.s26 + b.ton.s25) - (a.ton.s26 + a.ton.s25));
-
-  // Product / Customer — emit per-month buckets so the client can filter
-  // globally by any period. Derive s26/r26 per month before serialising.
-  const trimMonths = (arr: UnitBuckets[]) =>
-    arr.slice(0, 12).map(u => { derive26(u); return { ton:u.ton, carton:u.carton, gross:u.gross }; });
 
   const productData = [...byProduct.entries()].map(([code, p]) => ({
     code, product: p.name, category: p.category,
     monthly: trimMonths(p.months),
   }));
 
-  const customerData = [...byCustomer.entries()].map(([key, c]) => ({
+  const customerData = [...byCustomer.entries()].map(([, c]) => ({
     partner: c.partner, channel: c.channel,
     monthly: trimMonths(c.months),
   }));
 
-  // Customer × SKU per-month components → client derives per-period top SKU.
+  // Customer × SKU raw components → client derives per-period totals.
   const customerSkuMonthly: Array<{
     partner: string;
     skus: Array<{ product: string; monthly: SkuComp[] }>;
@@ -465,7 +383,7 @@ async function buildPayload() {
     customerSkuMonthly.push({ partner, skus });
   }
 
-  // Channel — emit YTD summary + per-month buckets.
+  // Channel
   const channelData: Array<{
     channel:string; ton:Bucket; carton:Bucket; gross:Bucket;
     monthly: Array<{ton:Bucket; carton:Bucket; gross:Bucket}>;
@@ -473,21 +391,12 @@ async function buildPayload() {
   for (const [ch, arr] of byChannelMonth) {
     const u = sumRange(arr, ytdMonths);
     if (!(u.ton.s25 || u.ton.s26 || u.ton.r25 || u.ton.r26)) continue;
-    const monthly = arr.slice(0, 12).map(m => {
-      const c = emptyUnits();
-      (["ton","carton","gross"] as Unit[]).forEach(un => {
-        for (const k of COMP_KEYS) c[un][k] = m[un][k];
-      });
-      derive26(c);
-      return { ton: c.ton, carton: c.carton, gross: c.gross };
-    });
-    channelData.push({ channel: ch, ton: u.ton, carton: u.carton, gross: u.gross, monthly });
+    channelData.push({ channel: ch, ton: u.ton, carton: u.carton, gross: u.gross, monthly: trimMonths(arr) });
   }
   channelData.sort((a,b) => b.ton.s26 - a.ton.s26);
 
-
-  // Monthly trend (derive per-month s26/r26 before serializing)
-  for (const u of byMonth) derive26(u);
+  // Monthly trend
+  for (const u of byMonth) deriveAll(u);
   const monthlyData = byMonth.map((u, i) => ({
     month_id: i+1,
     month_name: MONTH_NAMES[i],
@@ -495,8 +404,6 @@ async function buildPayload() {
     in_ytd: (i+1) <= ytdRange,
     ton: u.ton, carton: u.carton, gross: u.gross,
   }));
-
-
 
   const payload = {
     meta: {
@@ -507,12 +414,12 @@ async function buildPayload() {
       ton: totalsYTD.ton,
       carton: totalsYTD.carton,
       gross: totalsYTD.gross,
-      customers_25: customerSet25.size,
-      customers_26: customerSet26.size,
+      customers_25: customerSet[25].size,
+      customers_26: customerSet[26].size,
       generated_at: new Date().toISOString(),
       source: "vercel-blob:xlsx",
       missing_sheets: missingSheets,
-      build_ms: 0, // filled below
+      build_ms: 0,
     },
     product_data: productData,
     customer_data: customerData,
