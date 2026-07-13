@@ -105,14 +105,17 @@ function activeMonths(D){
   const m = +curMonth;
   return Number.isFinite(m) ? [m] : Array.from({length:R}, (_,i)=>i+1);
 }
-// Sum linear components across months, then derive s26/r26 per DAX.
-const COMP_KEYS = ['s25','r25','tgt25','tgt26','sum26','pr26','rinv26'];
+// Sum linear components across months, then derive s25/r25 and s26/r26 per
+// the shared DAX rules the server applies identically to both years.
+const COMP_KEYS = ['tgt25','tgt26','sum25','pr25','rinv25','sum26','pr26','rinv26'];
 const UNITS = ['ton','carton','gross'];
-function _emptyBucket(){ return { s25:0,s26:0,r25:0,r26:0,tgt25:0,tgt26:0,sum26:0,pr26:0,rinv26:0 }; }
+function _emptyBucket(){ return { s25:0,s26:0,r25:0,r26:0,tgt25:0,tgt26:0,sum25:0,pr25:0,rinv25:0,sum26:0,pr26:0,rinv26:0 }; }
 function _emptyUnits(){ return { ton:_emptyBucket(), carton:_emptyBucket(), gross:_emptyBucket() }; }
-function _derive26(u){
+function _deriveAll(u){
   for(const un of UNITS){
     const b = u[un];
+    b.r25 = Math.abs(b.rinv25 - b.pr25);
+    b.s25 = b.sum25 - b.pr25 - b.r25;
     b.r26 = Math.abs(b.rinv26 - b.pr26);
     b.s26 = b.sum26 - b.pr26 - b.r26;
   }
@@ -129,7 +132,7 @@ function sumMonthly(monthly, months){
       for(const k of COMP_KEYS) out[un][k] += (s[k] || 0);
     }
   }
-  _derive26(out);
+  _deriveAll(out);
   return out;
 }
 // Build a shallow-cloned dataset with every axis re-aggregated for the active
@@ -147,9 +150,12 @@ function filterDataset(D){
   const customerTopSku = (D.customer_sku_monthly||[]).map(({partner, skus})=>{
     let ts=null, tr=null;
     for(const {product, monthly} of skus){
-      let s25=0,r25=0,sum26=0,pr26=0,rinv26=0;
+      let sum25=0,pr25=0,rinv25=0,sum26=0,pr26=0,rinv26=0;
       for(const mi of months){ const c=monthly[mi-1]; if(!c) continue;
-        s25+=c.s25; r25+=c.r25; sum26+=c.sum26; pr26+=c.pr26; rinv26+=c.rinv26; }
+        sum25+=c.sum25||0; pr25+=c.pr25||0; rinv25+=c.rinv25||0;
+        sum26+=c.sum26||0; pr26+=c.pr26||0; rinv26+=c.rinv26||0; }
+      const r25 = Math.abs(rinv25 - pr25);
+      const s25 = sum25 - pr25 - r25;
       const r26 = Math.abs(rinv26 - pr26);
       const s26 = sum26 - pr26 - r26;
       const salesTon = s25 + s26;
