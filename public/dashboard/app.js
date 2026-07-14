@@ -767,24 +767,6 @@ function pgComparison(D){
       ${card('📈 Total vs Target 2026','',cw('ch-cmp-tt','300'))}
     </div>
 
-    <div class="chart-grid cols-2" style="margin-top:20px">
-      <div class="chart-card">
-        <div class="chart-header"><div class="chart-title">🌟 Best Growing Products</div></div>
-        <table class="data-table"><thead><tr><th>Product</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth</th></tr></thead>
-        <tbody>${bestP.map(p=>`<tr><td>${p.product}</td><td class="num">${fmt(p[curM].s25)}</td><td class="num">${fmt(p[curM].s26)}</td><td class="num">${badge(fmtP(grow(p[curM].s26,p[curM].s25)),'badge-up')}</td></tr>`).join('')}</tbody></table>
-      </div>
-      <div class="chart-card">
-        <div class="chart-header"><div class="chart-title">📉 Worst Performing Products</div></div>
-        <table class="data-table"><thead><tr><th>Product</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth</th></tr></thead>
-        <tbody>${worstP.map(p=>`<tr><td>${p.product}</td><td class="num">${fmt(p[curM].s25)}</td><td class="num">${fmt(p[curM].s26)}</td><td class="num">${badge(fmtP(grow(p[curM].s26,p[curM].s25)),'badge-down')}</td></tr>`).join('')}</tbody></table>
-      </div>
-    </div>
-
-    <div class="chart-card" style="margin-top:20px">
-      <div class="chart-header"><div class="chart-title">🏆 Best Performing Customers (by growth)</div></div>
-      <table class="data-table"><thead><tr><th>Customer</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth</th></tr></thead>
-      <tbody>${bestC.map(c=>`<tr><td>${c.customer}</td><td class="num">${fmt(c[curM].s25)}</td><td class="num">${fmt(c[curM].s26)}</td><td class="num">${badge(fmtP(grow(c[curM].s26,c[curM].s25)),'badge-up')}</td></tr>`).join('')}</tbody></table>
-    </div>
   `;
 
   setTimeout(()=>{
