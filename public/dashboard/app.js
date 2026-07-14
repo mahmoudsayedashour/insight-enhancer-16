@@ -97,17 +97,28 @@ function getSortHTML(label, field, cls=''){ return `<th data-sort="${field}"${cl
 // When curMonth==='ytd' we use meta totals (all YTD months).
 // When a specific month is selected we compute from monthly_data.
 function metaForCurrent(D){
-  if(curMonth==='ytd') return D.meta[curM];
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
-  if(!m) return D.meta[curM];
-  return { s25:m[curM].s25, s26:m[curM].s26, r25:m[curM].r25, r26:m[curM].r26, tgt25:m[curM].tgt25||0, tgt26:m[curM].tgt26 };
+  if(!curMonths.length) return D.meta[curM];
+  const set = new Set(curMonths.map(Number));
+  const acc = {s25:0,s26:0,r25:0,r26:0,tgt25:0,tgt26:0};
+  D.monthly_data.forEach(m=>{
+    if(!set.has(m.month_id)) return;
+    const x = m[curM];
+    acc.s25+=x.s25||0; acc.s26+=x.s26||0;
+    acc.r25+=x.r25||0; acc.r26+=x.r26||0;
+    acc.tgt25+=x.tgt25||0; acc.tgt26+=x.tgt26||0;
+  });
+  return acc;
 }
 function monthLabel(D){
-  if(curMonth==='ytd') return D.meta.ytd_label;
-  const m = D.monthly_data.find(x=>x.month_id===+curMonth);
-  return m ? `${m.month_name} 2026 vs ${m.month_name} 2025` : D.meta.ytd_label;
+  if(!curMonths.length) return D.meta.ytd_label;
+  const names = curMonths
+    .map(id => D.monthly_data.find(x=>x.month_id===+id))
+    .filter(Boolean)
+    .sort((a,b)=>a.month_id-b.month_id)
+    .map(m=>m.month_short);
+  return `${names.join(' + ')} — 2026 vs 2025`;
 }
-function isMonthFiltered(){ return curMonth!=='ytd'; }
+function isMonthFiltered(){ return curMonths.length>0; }
 function filteredNote(text){
   if(!isMonthFiltered()) return '';
   return `<div class="filter-note">📅 Month filter active (${text}). Product/customer aggregates use YTD totals unless month-level data exists.</div>`;
