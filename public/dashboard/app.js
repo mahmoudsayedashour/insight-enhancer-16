@@ -477,6 +477,14 @@ function pgChannel(D){
           {label:'2025',data:md.map(m=>m[curM].s25),borderColor:C.blueL,borderWidth:2,fill:false},
           {label:'2026',data:md.map(m=>m[curM].s26),borderColor:C.cyan,borderWidth:2.5,fill:false}
         ]}, options:lineOpts()});
+    } else if(channelTab==='channels'){
+      const chs=[...(D.channel_data||[])].filter(c=>(c[curM].s25||0)+(c[curM].s26||0)>0).sort((a,b)=>b[curM].s26-a[curM].s26);
+      const palette=[C.cyan,C.gold,C.green,C.purple,C.orange,C.red,C.teal,C.blueL];
+      mkChart('ch-ch-chBar',{type:'bar',data:{labels:chs.map(c=>c.channel),datasets:[
+        {label:'2025',data:chs.map(c=>c[curM].s25||0),backgroundColor:C.blueL+'AA',borderRadius:3},
+        {label:'2026',data:chs.map(c=>c[curM].s26||0),backgroundColor:C.cyan+'CC',borderRadius:3}
+      ]},options:{...barOpts(false),plugins:{legend:{display:true,position:'bottom'}}}});
+      mkChart('ch-ch-chDonut',{type:'doughnut',data:{labels:chs.map(c=>c.channel),datasets:[{data:chs.map(c=>c[curM].s26||0),backgroundColor:chs.map((_,i)=>palette[i%palette.length]),borderWidth:1,borderColor:'#0a1628'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right'}}}});
     } else if(channelTab==='customers'){
       const top10=[...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26).slice(0,10);
       mkChart('ch-ch-cust',{type:'bar',data:{labels:top10.map(c=>c.customer),datasets:[{data:top10.map(c=>c[curM].s26),backgroundColor:C.gold+'CC',borderRadius:4}]},options:{...barOpts(true),scales:{...barOpts(true).scales,y:{...barOpts(true).scales.y,ticks:{font:{size:11},autoSkip:false}}}}});
