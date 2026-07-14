@@ -611,7 +611,7 @@ function pgGrowth(D){
 // ═══════════════════════════════════════════════════════════════
 function pgMonthly(D){
   let md = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  if(isMonthFiltered()) md = md.filter(m=>m.month_id===+curMonth);
+  if(isMonthFiltered()){ const set=new Set(curMonths.map(Number)); md = md.filter(m=>set.has(m.month_id)); }
   document.getElementById('page-monthly').innerHTML=`
     ${filteredNote(monthLabel(D))}
     <div class="chart-grid cols-1">
