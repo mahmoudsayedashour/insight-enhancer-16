@@ -479,10 +479,7 @@ function pgCustomers(D){
   const segMap = { gold, silver, bronze, lost };
   const seg = segMap[custSegment] || gold;
 
-  // Top-returned/top-selling SKU per customer (best-effort proxy: uses top product in same period)
-  // Since dataset has no customer×SKU breakdown, we surface the overall top-selling and top-returned SKU as reference.
-  const topSellingSKU = [...D.product_data].sort((a,b)=>b[curM].s26-a[curM].s26)[0];
-  const topReturnedSKU = [...D.product_data].sort((a,b)=>b[curM].r26-a[curM].r26)[0];
+  // Per-customer top selling/returned SKU come from the dataset (top_sell / top_ret).
 
   const top20 = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26).slice(0,20);
 
