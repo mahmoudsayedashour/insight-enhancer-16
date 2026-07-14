@@ -347,8 +347,9 @@ function pgChannel(D){
   const m = metaForCurrent(D);
   const cats = [...D.category_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26);
 
-  const tabs = ['overview','customers','products','returns'];
-  const tabHTML = tabs.map(t=>`<button class="tab-btn ${channelTab===t?'active':''}" data-tab="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join('');
+  const tabs = ['overview','channels','customers','products','returns'];
+  const tabLabels = {overview:'Overview',channels:'Channels',customers:'Customers',products:'Products',returns:'Returns'};
+  const tabHTML = tabs.map(t=>`<button class="tab-btn ${channelTab===t?'active':''}" data-tab="${t}">${tabLabels[t]}</button>`).join('');
 
   let inner='';
   if(channelTab==='overview'){
