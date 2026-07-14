@@ -512,16 +512,16 @@ function pgCustomers(D){
     </div>
 
     <div class="chart-card" style="margin-top:20px">
-      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top selling & top returned SKU shown as overall dataset reference (customer×SKU detail not in dataset)</div></div>
+      <div class="chart-header"><div class="chart-title">🏆 Top 20 Customers</div><div class="chart-subtitle">Top selling & top returned SKU per customer (YTD)</div></div>
       <div class="data-table-wrapper" style="max-height:520px;overflow:auto">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Customer Name</th><th class="num">Sales Ton</th><th>Top Selling SKU (Ton)</th><th>Top Returned SKU (Ton)</th></tr></thead>
+          <thead><tr><th>#</th><th>Customer Name</th><th class="num">Sales Ton</th><th>Top Selling SKU</th><th>Top Returned SKU</th></tr></thead>
           <tbody>${top20.map((c,i)=>`<tr>
             <td>${i+1}</td>
             <td>${c.customer}</td>
             <td class="num">${fmt(c[curM].s26)}</td>
-            <td>${topSellingSKU?topSellingSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topSellingSKU?fmt(topSellingSKU[curM].s26):'–'})</span></td>
-            <td>${topReturnedSKU?topReturnedSKU.product:'–'} <span style="color:${C.gray};font-size:11px">(${topReturnedSKU?fmt(topReturnedSKU[curM].r26):'–'})</span></td>
+            <td>${c.top_sell || '–'}</td>
+            <td>${c.top_ret || '–'}</td>
           </tr>`).join('')}</tbody>
         </table>
       </div>
