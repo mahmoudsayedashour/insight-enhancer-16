@@ -187,7 +187,7 @@
     </div>
     <div class="sidebar-year-badge" id="ytd-label-top">Jan-Jun 25 vs Jan-Jul 26</div>
     <ul class="nav-menu">
-      <li><a href="#" class="nav-item active" data-page="home"><span class="nav-icon">🏠</span><span class="nav-label">YTD Greko Egypt Dashboard</span></a></li>
+      <li><a href="#" class="nav-item active" data-page="home"><span class="nav-icon">🏠</span><span class="nav-label">Executive Dashboard</span></a></li>
       <li><a href="#" class="nav-item" data-page="ytd"><span class="nav-icon">📊</span><span class="nav-label">SKU YTD Performance</span></a></li>
       <li><a href="#" class="nav-item" data-page="channel"><span class="nav-icon">🛒</span><span class="nav-label">Channel Performance</span></a></li>
       <li><a href="#" class="nav-item" data-page="customers"><span class="nav-icon">👥</span><span class="nav-label">Customer Analysis</span></a></li>
@@ -195,6 +195,7 @@
       <li><a href="#" class="nav-item" data-page="growth"><span class="nav-icon">📈</span><span class="nav-label">Growth Analysis</span></a></li>
       <li><a href="#" class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="nav-label">Monthly Trend</span></a></li>
       <li><a href="#" class="nav-item" data-page="quarterly"><span class="nav-icon">📋</span><span class="nav-label">Quarterly Dashboard</span></a></li>
+      <li><a href="#" class="nav-item" data-page="comparison"><span class="nav-icon">⚖️</span><span class="nav-label">Year Comparison</span></a></li>
     </ul>
     <div class="sidebar-footer">
       <div class="data-refresh">Updated: <span id="last-update">–</span></div>
@@ -205,7 +206,7 @@
   <main class="main-content" id="main-content">
     <div class="topbar">
       <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰</button>
-      <div class="topbar-title" id="page-title">YTD Greko Egypt Dashboard</div>
+      <div class="topbar-title" id="page-title">Greko Company Dashboard</div>
       <div class="topbar-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <select id="month-filter" class="month-filter" title="Filter by month">
           <option value="ytd">YTD (All Months)</option>
@@ -244,30 +245,23 @@
     if(localStorage.getItem('greko_auth')!=='1'){ location.replace('login.html'); }
   </script>
   <script>
-    // Load workbook-derived data live from the server pipeline.
-    // The server fetches the .xlsx from Vercel Blob, parses it with SheetJS,
-    // applies Power-BI DAX aggregation and returns compact JSON (60s cache).
-    // The workbook is the ONLY source of truth — no local JSON file.
+    // Load workbook-derived data. Prefers the live server endpoint (auto-refreshes
+    // from the Google Spreadsheet); falls back to the precomputed data.json.
     (async function loadData(){
       const overlay = document.getElementById('loading-overlay');
-      const setMsg = t => { const el = overlay.querySelector('.loader-text'); if(el) el.textContent = t; };
-      setMsg('Fetching workbook…');
-      try {
-        const r = await fetch('/api/public/dashboard-data', { cache: 'no-store' });
-        if(!r.ok){
-          const body = await r.text();
-          setMsg('Data pipeline error ('+r.status+'). See console.');
-          console.error('dashboard-data error', r.status, body);
-          return;
-        }
-        window.GREKO_DATA = await r.json();
-        const s = document.createElement('script');
-        s.src = 'app.js';
-        document.body.appendChild(s);
-      } catch(e){
-        console.error(e);
-        setMsg('Failed to reach data pipeline. See console.');
+      async function fetchJSON(url){ const r = await fetch(url,{cache:'no-store'}); if(!r.ok) throw 0; return r.json(); }
+      let data = null;
+      try { data = await fetchJSON('/api/public/dashboard-data'); }
+      catch(_){ try { data = await fetchJSON('data.json'); } catch(__){} }
+      if(!data){
+        overlay.querySelector('.loader-text').textContent = 'Failed to load data';
+        return;
       }
+      window.GREKO_DATA = data;
+      // Boot app after data is available
+      const s = document.createElement('script');
+      s.src = 'app.js';
+      document.body.appendChild(s);
     })();
     // Wire logout
     document.addEventListener('click', e => {
