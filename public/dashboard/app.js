@@ -740,14 +740,7 @@ function pgComparison(D){
   const gR = grow(m.r26, m.r25);
   const cats = [...D.category_data];
 
-  // Best/worst growing products
-  const prods = D.product_data.filter(p=>p[curM].s25>0);
-  const bestP = [...prods].sort((a,b)=>grow(b[curM].s26,b[curM].s25)-grow(a[curM].s26,a[curM].s25)).slice(0,5);
-  const worstP = [...prods].sort((a,b)=>grow(a[curM].s26,a[curM].s25)-grow(b[curM].s26,b[curM].s25)).slice(0,5);
-
-  // Best performing customers by growth
-  const cs = D.customer_data.filter(c=>c[curM].s25>0 && c[curM].s26>0);
-  const bestC = [...cs].sort((a,b)=>grow(b[curM].s26,b[curM].s25)-grow(a[curM].s26,a[curM].s25)).slice(0,5);
+  // (Best Growing / Worst Performing / Best Customers sections intentionally removed)
 
   document.getElementById('page-comparison').innerHTML=`
     ${filteredNote(monthLabel(D))}
