@@ -373,6 +373,36 @@ function pgChannel(D){
         ${card('📅 Monthly Trend','2025 vs 2026',cw('ch-ch-mon','300'))}
       </div>
     `;
+  } else if(channelTab==='channels'){
+    const chs = [...(D.channel_data||[])].filter(c=>(c[curM].s25||0)+(c[curM].s26||0)>0).sort((a,b)=>b[curM].s26-a[curM].s26);
+    const totS26 = chs.reduce((s,c)=>s+(c[curM].s26||0),0);
+    inner = `
+      <div class="chart-grid cols-2">
+        ${card('🛒 Sales by Channel','2025 vs 2026',cw('ch-ch-chBar','360'))}
+        ${card('🥧 Channel Contribution 2026','',cw('ch-ch-chDonut','360'))}
+      </div>
+      <div class="chart-card" style="margin-top:20px">
+        <div class="chart-header"><div class="chart-title">📋 Channel Detail</div><div class="chart-subtitle">Named channels from Customers sheet (KR, TT, KA, DIS, Online, B2B)</div></div>
+        <div class="data-table-wrapper" style="max-height:420px;overflow:auto">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>Channel</th><th class="num">Sales 25</th><th class="num">Sales 26</th><th class="num">Growth %</th><th class="num">Return 26</th><th class="num">Return %</th><th class="num">Share 26</th></tr></thead>
+            <tbody>${chs.map((c,i)=>{
+              const s25=c[curM].s25||0, s26=c[curM].s26||0, r26=c[curM].r26||0;
+              const g=grow(s26,s25), rp=retP(s26,r26), sh=totS26>0?(s26/totS26*100):0;
+              return `<tr>
+                <td>${i+1}</td>
+                <td><strong>${c.channel||'—'}</strong></td>
+                <td class="num">${fmt(s25)}</td>
+                <td class="num" style="color:${C.cyan}">${fmt(s26)}</td>
+                <td class="num">${badge(fmtP(g),g>=0?'badge-up':'badge-down')}</td>
+                <td class="num" style="color:${C.red}">${fmt(r26)}</td>
+                <td class="num">${rp.toFixed(1)}%</td>
+                <td class="num">${sh.toFixed(1)}%</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
   } else if(channelTab==='customers'){
     const cs = [...D.customer_data].filter(c=>c[curM].s26>0).sort((a,b)=>b[curM].s26-a[curM].s26);
     const top10 = cs.slice(0,10);
