@@ -9,7 +9,7 @@
 let curM = 'ton';
 let currentPage = 'home';
 let qFilter = 'ytd';           // Quarterly page: 'ytd','q1','q2'
-let curMonth = 'ytd';          // Month filter: 'ytd' or month_id number
+let curMonths = [];            // Month filter: [] = YTD, else array of month_id numbers
 let currentSort = { field: 's26', desc: true };
 let custSegment = 'gold';      // Customer Analysis selected segment
 let channelTab = 'overview';   // Channel Performance active tab
