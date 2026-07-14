@@ -802,10 +802,17 @@ function buildMonthFilter(D){
   const sel = document.getElementById('month-filter');
   if(!sel) return;
   const months = [...D.monthly_data].sort((a,b)=>a.month_id-b.month_id);
-  sel.innerHTML = `<option value="ytd">YTD (Auto — All 2026 Months)</option>` +
-    months.map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
-  sel.value = curMonth;
-  sel.addEventListener('change', e=>{ curMonth = e.target.value; renderPage(); });
+  // Convert to native <select multiple> for multi-month selection
+  sel.setAttribute('multiple','multiple');
+  sel.size = Math.min(8, months.length);
+  sel.title = 'Ctrl/Cmd-click to select multiple months. Deselect all = YTD.';
+  sel.innerHTML = months.map(m=>`<option value="${m.month_id}">${m.month_name}</option>`).join('');
+  // Restore selection
+  Array.from(sel.options).forEach(o => { o.selected = curMonths.includes(+o.value); });
+  sel.addEventListener('change', ()=>{
+    curMonths = Array.from(sel.selectedOptions).map(o=>+o.value);
+    renderPage();
+  });
 }
 
 function init(){
